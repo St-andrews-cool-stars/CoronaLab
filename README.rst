@@ -1,3 +1,7 @@
+
+:warning: This is code is very very much under active development and in an alpha state.
+
+
 Implements a PFSS model with stellar prominences.
 -------------------------------------------------
 

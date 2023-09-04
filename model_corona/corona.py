@@ -369,8 +369,8 @@ class ModelCorona:
 
         obs_angle = parsed_angle(obs_angle)
         phase = parsed_angle(phase)
-        if not (((obs_angle.to(u.deg) != self.field_lines.meta.get("Observation angle")).any()) and
-                (phase.to(u.deg) != self.field_lines.meta.get("Phase"))):
+        if not (((obs_angle.to(u.deg) != self.field_lines.meta.get("Observation angle", (np.nan,np.nan)*u.deg)).any())
+                and (phase.to(u.deg) != self.field_lines.meta.get("Phase"))):
             self.add_cartesian_coords(obs_angle, phase)
 
         if not sidelen_rad:
@@ -427,7 +427,6 @@ class ModelCorona:
         px_sz = sidelen_rad/sidelen_pix
         
         cube_dict = {"phi":[], "flux":[], "separation":[], "image":[]}
-        #pix_sz = 2*(field_table.meta["Source Surface Radius"]/field_table.meta["Radius"])/width_pix
     
         for phase in phase_list:
 

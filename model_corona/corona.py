@@ -21,7 +21,67 @@ from .utils import parsed_angle, make_serializable, read_serialized
 
 class RadioImage(u.Quantity):
     meta = MetaData()
+
+    def write(self, filename):
+
+        # TODO: add checking for existing file (and overwrite arg)
+
+        content_dict = {}
+        content_dict["meta"] = make_serializable(self.meta)
+        content_dict["unit"] = self.unit.to_string()
+
+        memfile = io.BytesIO()
+        np.save(memfile, self.value)
+        content_dict["array"] = memfile.getvalue().decode('latin-1')
+
+        with open(Path(self.meta["Directory"]).joinpath(self.meta["Filename"]), "w") as FLE:
+            json.dump(content_dict, FLE)
+
+    @classmethod
+    def read(cls, filename):
+        # TODO: WRITE THIS
+        pass
+
+    @property
+    def distance(self):
+        return self.meta.get("Distance")
+
+    @property
+    def observation_freq(self):
+        return self.meta.get('Observation frequency')
+
+    @property
+    def observation_angle(self):
+        return self.meta.get('Observation angle')
+
+    @property
+    def phase(self):
+        return self.meta.get('Phase')
+
+    @property
+    def pix_size(self):
+        return self.meta.get('Pixel size')
+
+    @property
+    def size_angular(self):
+        # TODO: make safe
+        self.meta.get('Pixel size') * self.meta.get('"Image size"')
         
+    @property
+    def flux(self):
+        self.meta.get('Total Flux')
+
+    @property
+    def uid(self):
+        uid = self.meta.get('UID')
+        if uid is None:
+            uid = md5(self).hexdigest()
+        return uid
+
+    @property
+    def parent_uid(self):
+        return self.meta.get("Parent UID")
+    
     @property
     def lobes(self):
 
@@ -40,32 +100,50 @@ class RadioImage(u.Quantity):
 
         return sep
 
-    def write(self, filename):
-
-        # TODO: add checking for existing file (and overwrite arg)
-
-        content_dict = {}
-        content_dict["meta"] = make_serializable(self.meta)
-        content_dict["unit"] = self.unit.to_string()
-
-        memfile = io.BytesIO()
-        np.save(memfile, self.value)
-        content_dict["array"] = memfile.getvalue().decode('latin-1')
-
-        with open(Path(self.meta["Directory"]).joinpath(self.meta["Filename"]), "w") as FLE:
-            json.dump(content_dict, FLE)
+    
 
 
-class RadioCube(QTable):
+class RadioCube(QTable):     
 
     @property
     def observation_freq(self):
-        return self.meta.get('Observation Frequency')
-    
+        return self.meta.get('Observation frequency')
+
+    @property
+    def observation_angle(self):
+        return self.meta.get('Observation angle')
+
+
+    @property
+    def pix_size(self):
+        return self.meta.get('Pixel size')
+
+    @property
+    def size_angular(self):
+        # TODO: make safe
+        self.meta.get('Pixel size') * self.meta.get('"Image size"')
+        
+    @property
+    def ave_flux(self):
+        self.meta.get('Average Flux')
+
+    @property
+    def ave_separation(self):
+        return self.meta.get("Average Separation")
+
+    @property
+    def uid(self):
+        uid = self.meta.get('UID')
+        if uid is None:
+            uid =  md5(self.as_array()).hexdigest()
+        return uid
+
+    @property
+    def parent_uid(self):
+        return self.meta.get("Parent UID")
+
 
 class ModelCorona(QTable):
-
-    _special_props = ["distance"]
 
     @classmethod
     def from_field_lines(cls, input_table, **model_parms):
@@ -78,9 +156,12 @@ class ModelCorona(QTable):
         input_table : Any valid input to `astropy.table.QTable()`
             The table object containing a set of model corona field lines
         **model_parms
-            Additional model parameters to go in the table meta data.
-            There is no requirement to supply any of these things, however
-            some functions require various meta data.
+            Optional. Additional model parameters to go in the table meta data.
+            If these parameters also appear in the input_table meta object,
+            the argument values will be perfered (i.e. these inputs override
+            anything already in the table metadata)
+            The valid names for parameters used throughout this class are:
+            *distance, radius, rss, obs_freq, obs_angle, phase*
 
         Returns
         -------
@@ -90,52 +171,86 @@ class ModelCorona(QTable):
 
         instance = cls(input_table)
 
+        instance["wind"] = instance["line_num"] < 0
+
+        # TODO: check column names/units
+        
+        instance.meta["Total Prominence Mass"] = instance['Mprom'].sum()
+        instance.meta["Corona Temperature"] = instance['temperature'][~instance.wind & ~instance["proms"]].mean()
+        instance.meta["Total Prominence Mass"] = instance['temperature'][instance["proms"]].mean()
+
+
+        # Dealing with the required metadata
+
+        # Radius
+        radius = model_parms.pop('radius', None) if 'radius' in model_parms.keys() else instance.meta.get("Radius")
+
+        if radius is None:
+            warnings.warn("No stellar radius found, assuming solar radius")
+            radius = c.R_sun # Assume solar radius
+
+        if not isinstance(radius, u.Quantity):
+            radius *= c.R_sun  # Assume in solar radii
+
+        instance.meta["Radius"] = radius
+
+        # Source surface radius
+        rss = model_parms.pop('rss', None) if 'rss' in model_parms.keys() else instance.meta.get("Source Surface Radius")
+
+        if rss is None:
+            raise AttributeError("No source surface found, this is a required parameter.")
+
+        if not isinstance(rss, u.Quantity):
+            rss *= radius  # Assume in stellar radii
+
+        instance.meta["Source Surface Radius"] = rss
+
+        # Dealing with optional meta data that we nonetheless want to conform 
+
+        # Distance 
+        distance = model_parms.pop('distance', None) if 'distance' in model_parms.keys() else instance.meta.get("Distance")
+
+        if distance is not None:
+            instance.distance = distance
+
+        # observation frequency
+        obs_freq = model_parms.pop('obs_freq', None) if 'obs_freq' in model_parms.keys() \
+            else instance.meta.get("Observation frequency")
+
+        if obs_freq is not None:
+            instance.observation_freq = obs_freq
+
+        # observation angle and phase
+        obs_angle = model_parms.pop('obs_angle', None) if 'obs_angle' in model_parms.keys() \
+            else instance.meta.get("Observation angle")
+        phase = model_parms.pop('phase', None) if 'phase' in model_parms.keys() else instance.meta.get("Phase")
+
+        if obs_angle is not None:
+            phase = 0 if phase is None else phase
+            instance.add_cartesian_coords(obs_angle, phase)
+
+        # Adding the rest of the given meta data (could be anything, we don't care)
         for parm in model_parms:
             instance.meta[parm] = model_parms[parm]
 
-        instance._regularize()
+        # Adding a unique id (hash)
+        instance.meta["UID"] = instance.uid
         
         return instance
 
-    def _regularize(self):
-        """
-        Function to make sure everything conforms to expectations by the functions.
-        """
-
-        # Making sure we have all the columns we need/want
-        # TODO: allow for if the input table didn't come out of my translation file
-        self["wind"] = self["line_num"] < 0
-
-        # Making sure the meta data matches the table
-        self.meta["Total Prominence Mass"] = self['Mprom'].sum()
-        self.meta["Corona Temperature"] = self['temperature'][~self["wind"] & ~self["proms"]].mean()
-        self.meta["Total Prominence Mass"] = self['temperature'][self["proms"]].mean()
-
-
-        if not isinstance(self.meta['Radius'], u.Quantity):
-            self.meta['Radius'] *= c.R_sun  # Assume in solar radii
-       
-        if not isinstance(self.meta['Source Surface Radius'], u.Quantity):
-            self.meta['Source Surface Radius'] *= self.meta['Radius']  # Assume in stellar radii
-
-        # Regularizing the meta dara attributes we care about
-        for prop in self.meta.keys():
-            if prop in self._special_props:
-                setattr(self, prop, self.meta[prop])
-
     @property
     def distance(self):
-        return self.meta.get("distance")
+        return self.meta.get("Distance")
 
     @distance.setter
     def distance(self, value):
         if not isinstance(value, u.Quantity):
             value *= u.pc  # Assume parsecs
-        self.meta["distance"] = value.to(u.pc)
+        self.meta["Distance"] = value.to(u.pc)
 
     @property
     def observation_freq(self):
-        return self.meta.get('Observation Frequency')
+        return self.meta.get('Observation frequency')
 
     @observation_freq.setter
     def observation_freq(self, obs_freq):
@@ -156,16 +271,16 @@ class ModelCorona(QTable):
     
         self["blackbody"] = bb_corona(obs_freq)
         self["blackbody"][self["proms"]] = bb_prominence(obs_freq)
-        self["blackbody"][self["wind"]] = 0
+        self["blackbody"][self.wind] = 0
     
         # Calculating the free-free absorption coefficient
         with warnings.catch_warnings(): # suppressing divide by zero warning on wind points
             warnings.simplefilter("ignore")
             self["kappa_ff"] = kappa_ff(self["temperature"], obs_freq, self["ndens"])
-        self["kappa_ff"][self["wind"]] = 0
+        self["kappa_ff"][self.wind] = 0
 
         # Recording the observation frequency
-        self.meta["Observation Frequency"] = obs_freq
+        self.meta["Observation frequency"] = obs_freq
 
     def add_cartesian_coords(self, obs_angle, phase=0):
         """
@@ -205,7 +320,7 @@ class ModelCorona(QTable):
     @phase.setter
     def phase(self, value):
         if not self.observation_angle:
-            raise AttributeError("You cannot set a phase with no Observation Angle in place.")
+            raise AttributeError("You cannot set a phase with no Observation angle in place.")
         self.add_cartesian_coords(self.observation_angle, value)
  
     @property
@@ -224,16 +339,66 @@ class ModelCorona(QTable):
     def rss(self):
         return self.meta.get('Source Surface Radius')
 
+    @property
+    def uid(self):
+        uid = self.meta.get('UID')
+        if uid is None:
+            uid = md5(self['radius', 'theta', 'phi', 'Bmag', 'proms'].as_array()).hexdigest()
+        return uid
+
+    @property
+    def wind(self):
+        return self["wind"]
+
+    @property
+    def prom(self):
+        return self["proms"]
+        
+    def print_meta(self):
+        pass
+
+
+    def add_plasma_beta(self):
+        """
+        Calculate the plasma beta (ratio of plasma pressure to magnetic pressure) for each cell:
+
+        $\beta = \frac{nkT}{B^2/2\mu_0}$
+
+        Note: The wind had Bmag set to 0 in it, so we must exclue those points
+        """
+
+        self.add_column(Column(name="plasma_beta", length=len(self)))
+
+        p_plasma = self[~self.wind]["ndens"]*c.k_B*self[~self.wind]["temperature"]
+        p_mag = self[~self.wind]["Bmag"]**2/(2*c.mu0)
+
+        self["plasma_beta"][~self.wind] = (p_plasma/p_mag).to("")
+        
+    
     def make_radio_image(self, sidelen_pix, *, sidelen_rad=None, obs_angle=None, phase=None):
         """
         Make a (square) radio image given the current object parameters.
 
         Parameters
         ----------
-
+        sidelen_pix : int
+            Image side length in pixels (image will be sidelen_pix x sidelen_pix pixels)
+        sidelen_rad : float
+            Optional. Image side length in stellar radii. If not given the source surface radius
+            will be used.
+        obs_angle : 2 lonrg array of float or `astropy.units.Quantity`
+            Optional. Format is (ra, dec). If not given the current observation angle stored
+            in meta will be used.
+        phase : float or `astropy.units.Quantity`
+            Optional. The stellar rotation phase/latitude. If not given the current phase stored
+            in meta will be used.
+            
+        
         Returns
         -------
-        
+        response : `RadioImage`
+            The calculated radio image as a RadioImage object, which is a `astropy.units.Quantity`
+            array with metadata.
         """
 
         if self.distance is None:
@@ -242,7 +407,7 @@ class ModelCorona(QTable):
         if (obs_angle is None) & (self.observation_angle is None):
             raise AttributeError("Observation angle neither supplied nor already set.")
         elif obs_angle:
-            phase = 0 if phase is none else phase
+            phase = 0 if phase is None else phase
             self.add_cartesian_coords(obs_angle, phase)
 
         if sidelen_rad is None:
@@ -252,19 +417,23 @@ class ModelCorona(QTable):
             px_sz = sidelen_rad/sidelen_pix
         
         image = make_radio_image(self, sidelen_pix, sidelen_rad, self.distance)   
-        image_meta = {"Observing frequency": self.observation_freq,
-                      "Observation Angle": self.observation_angle,
+        image_meta = {"Observation frequency": self.observation_freq,
+                      "Observation angle": self.observation_angle,
                       "Stellar Phase":  self.phase,
                       "Image size": (sidelen_pix, sidelen_pix)*u.pix,
                       "Pixel size": px_sz * self.radius}
 
         if self.distance is not None:
-            image_meta["distance"] = self.distance
+            image_meta["Distance"] = self.distance
             image_meta["Total Flux"] = np.sum(image)
 
         image = RadioImage(image)
         image.meta.update(image_meta)
 
+        # Adding UID info
+        image.meta["UID"] = image.uid
+        image.meta["Parent UID"] = self.uid
+        
         return image
 
     
@@ -319,13 +488,17 @@ class ModelCorona(QTable):
         
         cube_table = RadioCube(cube_dict)
 
-        cube_meta = {"Observing frequency": self.meta["Observation Frequency"],
-                     "Observation Angle": self.meta["Observation angle"],
+        cube_meta = {"Observation frequency": self.meta["Observation frequency"],
+                     "Observation angle": self.meta["Observation angle"],
                      "Image size": (sidelen_pix, sidelen_pix)*u.pix,
                      "Pixel size": px_sz * self.meta["Radius"],
                      "Average Flux": cube_table["flux"].mean(),
                      "Average Separation": cube_table["separation"].mean()}
         cube_table.meta.update(cube_meta)
+
+        # Adding UID info
+        cube_table.meta["UID"] = cube_table.uid
+        cube_table.meta["Parent UID"] = self.uid
 
         return cube_table
 

@@ -100,8 +100,6 @@ class RadioImage(u.Quantity):
 
         return sep
 
-    
-
 
 class RadioCube(QTable):     
 

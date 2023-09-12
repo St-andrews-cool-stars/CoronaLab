@@ -4,6 +4,75 @@
 Implements a PFSS model with stellar prominences.
 -------------------------------------------------
 
+Developer Documentation
+-----------------------
+
+Installation
+^^^^^^^^^^^^
+
+.. code-block:: bash
+
+    $ git clone https://github.com/St-andrews-cool-stars/model_corona.git
+    $ cd model_corona
+    $ pip install .
+    
+For active developement intall in develop mode
+
+.. code-block:: bash
+
+    $ pip install -e .
+    
+Testing
+^^^^^^^
+Testing is run with `tox <https://tox.readthedocs.io>`_ (``pip install tox``).
+Tests can be found in ``model_corona/tests/``.
+
+.. code-block:: bash
+
+    $ tox -e test
+
+Tests can also be run directly with pytest:
+
+.. code-block:: bash
+
+    $ pip install -e .[test]
+    $ pytest
+
+You can specify a single directory or file to test as:
+
+.. code-block:: bash
+
+    $ pytest model_corona/tests/test_radio.py
+
+Codestyle can be checked with:
+
+.. code-block:: bash
+
+    $ tox -e codestyle
+    
+
+Documentation
+^^^^^^^^^^^^^
+Documentation files are found in ``docs/``.
+
+We build the documentation with `tox <https://tox.readthedocs.io>`_ (``pip install tox``):
+
+.. code-block:: bash
+
+    $ tox -e build-docs
+
+You can also build the documentation with Sphinx directly using:
+
+.. code-block:: bash
+                
+    $ pip install -e .[docs]
+    $ cd docs
+    $ make html
+    
+The built docs will be in ``docs/_build/html/``, to view them go to ``file:///path/to/model_corona/repo/docs/_build/html/index.html`` in the browser of your choice.
+
+
+
 License
 -------
 

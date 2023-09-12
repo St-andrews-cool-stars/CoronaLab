@@ -8,6 +8,9 @@ authors = [
   { name = "St Andrews Cool Stars Group", email = "cb432@st-andrews.ac.uk" },
 ]
 dependencies = [
+    "astropy",
+    "scipy",
+    "scikit-image"
   
 ]
 dynamic = ["version"]
@@ -24,7 +27,8 @@ docs = [
 ]
 
 
-
+[project.urls]
+repository = "https://github.com/St-andrews-cool-stars/model_corona.git" 
 
 
 [build-system]

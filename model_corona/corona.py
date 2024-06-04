@@ -8,7 +8,7 @@ from hashlib import md5
 from re import search
 
 from astropy.table import Table, QTable, Column
-from astropy.coordinates import SkyCoord
+from astropy.coordinates import SkyCoord, distances
 from astropy.utils.metadata import MetaData
 from astropy.modeling.physical_models import BlackBody
 
@@ -59,17 +59,21 @@ class RadioImage(u.Quantity):
         return self.meta.get('Phase')
 
     @property
+    def stellar_radius(self):
+        return self.meta.get('Stellar Radius')
+
+    @property
     def pix_size(self):
         return self.meta.get('Pixel size')
 
     @property
     def size_angular(self):
         # TODO: make safe
-        self.meta.get('Pixel size') * self.meta.get('"Image size"')
+        return self.meta.get('Pixel size') * self.meta.get('"Image size"')
         
     @property
     def flux(self):
-        self.meta.get('Total Flux')
+        return self.meta.get('Total Flux')
 
     @property
     def uid(self):
@@ -86,7 +90,7 @@ class RadioImage(u.Quantity):
     def lobes(self):
 
         if not hasattr(self, '_lobe_array'):
-            self._lobe_array = get_image_lobes(self, self.meta.get("Pixel size", 1*u.pix))
+            self._lobe_array = get_image_lobes(self, self.pix_size, 5*self.stellar_radius)
             self.meta["Separation"] = self._lobe_array.meta["Separation"]
 
         return self._lobe_array
@@ -175,7 +179,7 @@ class ModelCorona(QTable):
         
         instance.meta["Total Prominence Mass"] = instance['Mprom'].sum()
         instance.meta["Corona Temperature"] = instance['temperature'][~instance.wind & ~instance["proms"]].mean()
-        instance.meta["Total Prominence Mass"] = instance['temperature'][instance["proms"]].mean()
+        instance.meta["Prominence Temperature"] = instance['temperature'][instance["proms"]].mean()
 
 
         # Dealing with the required metadata
@@ -228,8 +232,10 @@ class ModelCorona(QTable):
             instance.add_cartesian_coords(obs_angle, phase)
 
         # Adding the rest of the given meta data (could be anything, we don't care)
+        # Note: currently we just ditch anything with an already used key value 
         for parm in model_parms:
-            instance.meta[parm] = model_parms[parm]
+            if not parm in instance.meta.keys():
+                instance.meta[parm] = model_parms[parm]
 
         # Adding a unique id (hash)
         instance.meta["UID"] = instance.uid
@@ -280,22 +286,34 @@ class ModelCorona(QTable):
         # Recording the observation frequency
         self.meta["Observation frequency"] = obs_freq
 
-    def add_cartesian_coords(self, obs_angle, phase=0):
+    def add_cartesian_coords(self, obs_angle, phase=0, recalculate=False):
         """
         Given a viewing angle and optional phase add columns with the cartesian coordinats for each row.
         Assumes field_table has columns radius, theta, phi
 
         Note, this goes into a right handed cartesian coordinate system.
         """
-
+        
         obs_angle = parsed_angle(obs_angle)
-        phi0, theta0 = obs_angle
         phase = parsed_angle(phase)
-    
+
+        # Check if we actually need to redo the calculation or not
+        if ((not recalculate) and
+            (self.meta.get("Phase") == phase) and
+            (np.isclose(self.meta.get("Observation angle", [np.nan]*2*u.deg), obs_angle).all())):
+            return
+        
+        phi0, theta0 = obs_angle
         phi = self["phi"]+phase
         theta = self["theta"]
-        r = self["radius"]
-    
+
+        # Sometime radius is a distance object, and passing that on to x,y,z leads to problems when reading/writing
+        # because distances are not allowed to be negative numbers
+        if isinstance(self["radius"], distances.Distance):
+            r = u.Quantity(self["radius"])
+        else:
+            r = self["radius"]
+
         self["x"] = r * (np.cos(theta0)*np.cos(theta) + np.sin(theta0)*np.sin(theta)*np.cos(phi-phi0))
         self["y"] = r * np.sin(theta)*np.sin(phi-phi0)
         self["z"] = r * (np.sin(theta0)*np.cos(theta) - np.cos(theta0)*np.sin(theta)*np.cos(phi-phi0))
@@ -317,7 +335,7 @@ class ModelCorona(QTable):
 
     @phase.setter
     def phase(self, value):
-        if not self.observation_angle:
+        if not isinstance(self.observation_angle, u.Quantity):
             raise AttributeError("You cannot set a phase with no Observation angle in place.")
         self.add_cartesian_coords(self.observation_angle, value)
  
@@ -351,10 +369,24 @@ class ModelCorona(QTable):
     @property
     def prom(self):
         return self["proms"]
+
+    @property
+    def cor_only(self):
+        return ~self["wind"] & ~self["proms"]
         
     def print_meta(self):
-        pass
-
+        for key, val in self.meta.items():
+            if key == "Radius":
+                print(f"{key}: {val/c.R_sun:.1f} Rsun")
+            elif key == "Source Surface Radius":
+                rad = self.meta.get("Radius", c.R_sun)
+                print(f"{key}: {val/rad:.1f} R*")
+            elif key == "Corona Temperature":
+                print(f"{key}: {val:.1e}")
+            elif key in ("nrad", "UID"):
+                continue
+            else:
+                print(f"{key}: {val}")
 
     def add_plasma_beta(self):
         """
@@ -373,7 +405,7 @@ class ModelCorona(QTable):
         self["plasma_beta"][~self.wind] = (p_plasma/p_mag).to("")
         
     
-    def make_radio_image(self, sidelen_pix, *, sidelen_rad=None, obs_angle=None, phase=None):
+    def make_radio_image(self, sidelen_pix, *, sidelen_rad=None, obs_angle=None, phase=None, obs_freq=None):
         """
         Make a (square) radio image given the current object parameters.
 
@@ -402,11 +434,25 @@ class ModelCorona(QTable):
         if self.distance is None:
             warnings.warn("No distance found, the returned image will be in intensity rather than flux.")
 
-        if (obs_angle is None) & (self.observation_angle is None):
-            raise AttributeError("Observation angle neither supplied nor already set.")
-        elif obs_angle:
-            phase = 0 if phase is None else phase
-            self.add_cartesian_coords(obs_angle, phase)
+        # Handling the observation frequency
+        if obs_freq is None:
+            if self.observation_freq is None:
+                raise AttributeError("Observation frequency neither supplied nor already set.")
+        else:
+            if obs_freq != self.observation_freq:
+                self.observation_fre = obs_freq
+
+        # Handling the observation angle/phase
+        if obs_angle is None:
+            if self.observation_angle is None:
+                raise AttributeError("Observation angle neither supplied nor already set.")
+            else:
+                obs_angle = self.observation_angle
+
+        if phase is None:
+            phase = self.meta.get("Phase", 0)
+
+        self.add_cartesian_coords(obs_angle, phase)
 
         if sidelen_rad is None:
             rss = self.meta["Source Surface Radius"]/self.meta["Radius"]
@@ -419,7 +465,8 @@ class ModelCorona(QTable):
                       "Observation angle": self.observation_angle,
                       "Stellar Phase":  self.phase,
                       "Image size": (sidelen_pix, sidelen_pix)*u.pix,
-                      "Pixel size": px_sz * self.radius}
+                      "Pixel size": (px_sz * self.radius).to(self.radius),
+                      "Stellar Radius": self.radius}
 
         if self.distance is not None:
             image_meta["Distance"] = self.distance

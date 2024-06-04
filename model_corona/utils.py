@@ -17,6 +17,14 @@ def parsed_angle(angle):
 
     return angle.to(u.rad)
 
+def xy2polar(x, y, center=(0,0)):
+    """
+    Trans form cartesian coordinates into polar coordinates,
+    with respect to the given center point.
+    """
+    z = (x-center[0]) + 1j*(y-center[0])
+    return ( np.abs(z), (np.angle(z, deg=True)%360)*u.deg )
+
 def make_serializable(thing):
     """
     TODO

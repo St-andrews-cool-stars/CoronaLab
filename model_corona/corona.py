@@ -15,11 +15,12 @@ from astropy.modeling.physical_models import BlackBody
 import astropy.constants as c
 import astropy.units as u
 
-from .radio import kappa_ff, make_radio_image, get_image_lobes
-from .utils import parsed_angle, make_serializable, read_serialized
+from .freefree import kappa_ff, freefree_image
+from .utils import parsed_angle, make_serializable, read_serialized, normalize_frequency
+from .analysis import get_image_lobes
 
 
-class RadioImage(u.Quantity):
+class ModelImage(u.Quantity):
     meta = MetaData()
 
     def write(self, filename):
@@ -34,13 +35,24 @@ class RadioImage(u.Quantity):
         np.save(memfile, self.value)
         content_dict["array"] = memfile.getvalue().decode('latin-1')
 
-        with open(Path(self.meta["Directory"]).joinpath(self.meta["Filename"]), "w") as FLE:
+        with open(filename, "w") as FLE:
             json.dump(content_dict, FLE)
 
     @classmethod
     def read(cls, filename):
-        # TODO: WRITE THIS
-        pass
+
+        with open(filename, "r") as FLE:
+            img_dict = json.load(FLE)
+
+        img_str = img_dict.pop("array")
+        fp = io.BytesIO(img_str.encode('latin-1'))
+        arr_np = np.load(fp, encoding='latin1')
+
+        instance = cls(arr_np*u.Unit(img_dict.pop("unit")))
+
+        instance.meta.update(read_serialized(img_dict.pop("meta")))
+
+        return instance
 
     @property
     def distance(self):
@@ -86,26 +98,8 @@ class RadioImage(u.Quantity):
     def parent_uid(self):
         return self.meta.get("Parent UID")
     
-    @property
-    def lobes(self):
 
-        if not hasattr(self, '_lobe_array'):
-            self._lobe_array = get_image_lobes(self, self.pix_size, 5*self.stellar_radius)
-            self.meta["Separation"] = self._lobe_array.meta["Separation"]
-
-        return self._lobe_array
-
-    @property
-    def lobe_separation(self):
-        sep = self.meta.get("Separation")
-
-        if not sep:
-            sep = self.lobes.meta["Separation"]
-
-        return sep
-
-
-class RadioCube(QTable):     
+class PhaseCube(QTable):     
 
     @property
     def observation_freq(self):
@@ -138,12 +132,43 @@ class RadioCube(QTable):
         uid = self.meta.get('UID')
         if uid is None:
             uid =  md5(self.as_array()).hexdigest()
+            self.meta['UID'] = uid
         return uid
 
     @property
     def parent_uid(self):
         return self.meta.get("Parent UID")
 
+
+class FrequencyCube(QTable):
+
+    @property
+    def observation_angle(self):
+        return self.meta.get('Observation angle')
+
+
+    @property
+    def pix_size(self):
+        return self.meta.get('Pixel size')
+
+    @property
+    def size_angular(self):
+        # TODO: make safe
+        self.meta.get('Pixel size') * self.meta.get('"Image size"')
+
+    @property
+    def uid(self):
+        uid = self.meta.get('UID')
+        if uid is None:
+            uid =  md5(self.as_array()).hexdigest()
+            self.meta['UID'] = uid
+        return uid
+
+    @property
+    def parent_uid(self):
+        return self.meta.get("Parent UID")
+
+    
 
 class ModelCorona(QTable):
 
@@ -181,7 +206,6 @@ class ModelCorona(QTable):
         instance.meta["Corona Temperature"] = instance['temperature'][~instance.wind & ~instance["proms"]].mean()
         instance.meta["Prominence Temperature"] = instance['temperature'][instance["proms"]].mean()
 
-
         # Dealing with the required metadata
 
         # Radius
@@ -216,11 +240,14 @@ class ModelCorona(QTable):
             instance.distance = distance
 
         # observation frequency
-        obs_freq = model_parms.pop('obs_freq', None) if 'obs_freq' in model_parms.keys() \
-            else instance.meta.get("Observation frequency")
-
+        obs_freq = model_parms.pop('obs_freq', None)
         if obs_freq is not None:
-            instance.observation_freq = obs_freq
+            instance.add_observation_frequency(obs_freq)
+        
+        obs_freq = instance.meta.pop("Observation frequency", None)
+        if obs_freq is not None:
+            instance.add_observation_frequency(obs_freq)
+            instance.meta
 
         # observation angle and phase
         obs_angle = model_parms.pop('obs_angle', None) if 'obs_angle' in model_parms.keys() \
@@ -253,39 +280,50 @@ class ModelCorona(QTable):
         self.meta["Distance"] = value.to(u.pc)
 
     @property
-    def observation_freq(self):
-        return self.meta.get('Observation frequency')
+    def observation_freqs(self):
+        return self.meta.get('Observation frequencies', []*u.GHz)
 
-    @observation_freq.setter
-    def observation_freq(self, obs_freq):
+    def add_observation_freq(self, obs_freq, cache=True):
         """
-        Doing all setup that requires the observation frequency.
-
-        Added columns:
-        - blackbody : blackbody emission at the observing frequency (erg / (cm2 Hz s sr))
-        - kappa_ff : free-free absorption coefficient at the observing frequency (cm^-1)
+        Add freq specific column. "<obs_freq> Kappa_ff"
         """
-        
-        if isinstance(obs_freq, float):
-            obs_freq = obs_freq * u.GHz # assume GHz by default
 
-        # Doing blackbody calculations
-        bb_corona = BlackBody(temperature=self.corona_temp )
-        bb_prominence = BlackBody(temperature=self.prom_temp)
-    
-        self["blackbody"] = bb_corona(obs_freq)
-        self["blackbody"][self["proms"]] = bb_prominence(obs_freq)
-        self["blackbody"][self.wind] = 0
-    
+        obs_freq = normalize_frequency(obs_freq)
+            
+        if (cache == True) and (obs_freq in self.observation_freqs):
+            return # No need to recalculate
+
         # Calculating the free-free absorption coefficient
         with warnings.catch_warnings(): # suppressing divide by zero warning on wind points
             warnings.simplefilter("ignore")
-            self["kappa_ff"] = kappa_ff(self["temperature"], obs_freq, self["ndens"])
-        self["kappa_ff"][self.wind] = 0
+            self[f"{obs_freq} Kappa_ff"] = kappa_ff(self["temperature"], obs_freq, self["ndens"])
+        self[f"{obs_freq} Kappa_ff"][self.wind] = 0
 
-        # Recording the observation frequency
-        self.meta["Observation frequency"] = obs_freq
+        # Recording the observation frequency in the metadata
+        self.meta["Observation frequencies"] = np.concatenate((self.meta.get("Observation frequencies", []*u.GHz),
+                                                               [obs_freq]))
 
+
+    def clear_observation_freqs(self, obs_freqs="all"):
+
+        if obs_freqs == "all":
+            obs_freqs = self.observation_freqs
+        elif (not isinstance(obs_freqs, u.Quantity) and  np.isscalar(obs_freqs)) or \
+             (isinstance(obs_freqs, u.Quantity) and  np.isscalar(obs_freqs.value)): 
+            obs_freqs = [obs_freqs]
+
+        for freq in obs_freqs:
+            freq = normalize_frequency(freq)
+
+            if not freq in self.observation_freqs: # Freq is not actuall in our table
+                continue
+
+            self.remove_column(f"{freq} Kappa_ff")
+            
+            self.meta['Observation frequencies'] = np.delete(self.meta['Observation frequencies'],
+                                                             np.where(self.meta['Observation frequencies'] == freq))
+
+        
     def add_cartesian_coords(self, obs_angle, phase=0, recalculate=False):
         """
         Given a viewing angle and optional phase add columns with the cartesian coordinats for each row.
@@ -348,6 +386,18 @@ class ModelCorona(QTable):
         return self.meta.get("Prominence Temperature")
 
     @property
+    def bb_corona(self):
+        if getattr(self, "_bb_corona", None) is None:
+            self._bb_corona = BlackBody(temperature=self.corona_temp)
+        return self._bb_corona
+
+    @property
+    def bb_prominence(self):
+        if getattr(self, "_bb_prominence", None) is None:
+            self._bb_prominence = BlackBody(temperature=self.prom_temp)
+        return self._bb_prominence
+
+    @property
     def radius(self):
         return self.meta.get('Radius')
 
@@ -383,16 +433,19 @@ class ModelCorona(QTable):
                 print(f"{key}: {val/rad:.1f} R*")
             elif key == "Corona Temperature":
                 print(f"{key}: {val:.1e}")
+            elif key == "Total Prominence Mass":
+                print(f"{key}: {val:.1e}")
             elif key in ("nrad", "UID"):
                 continue
             else:
                 print(f"{key}: {val}")
 
     def add_plasma_beta(self):
-        """
+        r"""
         Calculate the plasma beta (ratio of plasma pressure to magnetic pressure) for each cell:
 
-        $\beta = \frac{nkT}{B^2/2\mu_0}$
+        .. math::
+            \beta = \frac{nkT}{B^2/2\mu_0}
 
         Note: The wind had Bmag set to 0 in it, so we must exclue those points
         """
@@ -403,9 +456,25 @@ class ModelCorona(QTable):
         p_mag = self[~self.wind]["Bmag"]**2/(2*c.mu0)
 
         self["plasma_beta"][~self.wind] = (p_plasma/p_mag).to("")
+
+    def _add_bb_col(self, obs_freq):
+        """
+        The blackbody column is not labelled by frequeny so in general
+        this function shoudl not be called by the user.
+        """
+
+        if not hasattr(self, 'bb_corona'):
+            self.bb_corona = BlackBody(temperature=self.corona_temp)
+            
+        if not hasattr(self, 'bb_prominence'):
+            self.bb_prominence = BlackBody(temperature=self.prom_temp)
+            
+        self["blackbody"] = self.bb_corona(obs_freq)
+        self["blackbody"][self["proms"]] = self.bb_prominence(obs_freq)
+        self["blackbody"][self.wind] = 0
         
     
-    def make_radio_image(self, sidelen_pix, *, sidelen_rad=None, obs_angle=None, phase=None, obs_freq=None):
+    def freefree_image(self, obs_freq, sidelen_pix, *, sidelen_rad=None, obs_angle=None, phase=None):
         """
         Make a (square) radio image given the current object parameters.
 
@@ -426,7 +495,7 @@ class ModelCorona(QTable):
         
         Returns
         -------
-        response : `RadioImage`
+        response : `ModelImage`
             The calculated radio image as a RadioImage object, which is a `astropy.units.Quantity`
             array with metadata.
         """
@@ -434,13 +503,10 @@ class ModelCorona(QTable):
         if self.distance is None:
             warnings.warn("No distance found, the returned image will be in intensity rather than flux.")
 
-        # Handling the observation frequency
-        if obs_freq is None:
-            if self.observation_freq is None:
-                raise AttributeError("Observation frequency neither supplied nor already set.")
-        else:
-            if obs_freq != self.observation_freq:
-                self.observation_fre = obs_freq
+        # Getting the observation frequency set up
+        obs_freq = normalize_frequency(obs_freq)
+        self.add_observation_freq(obs_freq, cache=True)
+        self._add_bb_col(obs_freq)
 
         # Handling the observation angle/phase
         if obs_angle is None:
@@ -459,9 +525,9 @@ class ModelCorona(QTable):
             px_sz = 2*rss/sidelen_pix
         else:
             px_sz = sidelen_rad/sidelen_pix
-        
-        image = make_radio_image(self, sidelen_pix, sidelen_rad, self.distance)   
-        image_meta = {"Observation frequency": self.observation_freq,
+
+        image = freefree_image(self, obs_freq, sidelen_pix, sidelen_rad, self.distance, kff_col=f"{obs_freq} Kappa_ff")   
+        image_meta = {"Observation frequency": obs_freq,
                       "Observation angle": self.observation_angle,
                       "Stellar Phase":  self.phase,
                       "Image size": (sidelen_pix, sidelen_pix)*u.pix,
@@ -472,7 +538,7 @@ class ModelCorona(QTable):
             image_meta["Distance"] = self.distance
             image_meta["Total Flux"] = np.sum(image)
 
-        image = RadioImage(image)
+        image = ModelImage(image)
         image.meta.update(image_meta)
 
         # Adding UID info
@@ -482,11 +548,14 @@ class ModelCorona(QTable):
         return image
 
     
-    def make_radio_phase_cube(self, num_steps, sidelen_pix, *, sidelen_rad=None,
-                              obs_angle=None, min_phi=0*u.deg, max_phi=360*u.deg):
+    def radio_phase_cube(self, obs_freq, num_steps, sidelen_pix, beam_size, *, sidelen_rad=None,
+                        obs_angle=None, min_phi=0*u.deg, max_phi=360*u.deg):
         """
         Make a number (square) radio image given the current object parameters, evenly
         spaced between the min and max phases.
+
+        TODO: this should allow ecm imagery to be added but later
+        TODO: this does not need to be so specific
 
         Parameters
         ----------
@@ -505,6 +574,11 @@ class ModelCorona(QTable):
         else:
             obs_angle = self.observation_angle
 
+        # Getting the observation frequency set up
+        obs_freq = normalize_frequency(obs_freq)
+        self.add_observation_freq(obs_freq, cache=True)
+        self._add_bb_col(obs_freq)
+
         # Regularising the angles
         min_phi = parsed_angle(min_phi)
         max_phi = parsed_angle(max_phi)
@@ -518,27 +592,37 @@ class ModelCorona(QTable):
             sidelen_rad = 2*self.meta["Source Surface Radius"]/self.meta["Radius"]
         px_sz = sidelen_rad/sidelen_pix
         
-        cube_dict = {"phi":[], "flux":[], "separation":[], "image":[]}
-
+        cube_dict = {"phi":[], "flux":[], "separation":[], "num_peaks":[], "ang_sep":[], "image":[]}
         for phase in phase_list:
 
             self.add_cartesian_coords(obs_angle, phase)
-            image = make_radio_image(self, sidelen_pix, sidelen_rad, self.distance)
-            lobes = get_image_lobes(image, px_sz)
+            image = freefree_image(self, obs_freq, sidelen_pix, sidelen_rad, self.distance, kff_col=f"{obs_freq} Kappa_ff")
+            lobes = get_image_lobes(image, px_sz, beam_size)
         
             cube_dict["phi"].append(phase.to('deg'))
             cube_dict["flux"].append(np.sum(image))
             cube_dict["separation"].append(lobes.meta["Separation"])
+            cube_dict["num_peaks"].append(len(lobes))
+            cube_dict["ang_sep"].append(lobes.meta["Angular separation"])
+
+            
             cube_dict["image"].append(image)
         
-        cube_table = RadioCube(cube_dict)
+        cube_table = PhaseCube(cube_dict)
 
-        cube_meta = {"Observation frequency": self.meta["Observation frequency"],
+        
+        cube_meta = {"Observation frequency": obs_freq,
                      "Observation angle": self.meta["Observation angle"],
                      "Image size": (sidelen_pix, sidelen_pix)*u.pix,
-                     "Pixel size": px_sz * self.meta["Radius"],
+                     "Stellar Radius": self.meta["Radius"],
+                     "Pixel size": px_sz,
+                     "Beam size": beam_size,
                      "Average Flux": cube_table["flux"].mean(),
-                     "Average Separation": cube_table["separation"].mean()}
+                     "Percent 2 Peaks": sum(cube_table["num_peaks"]==2)/len(cube_table)}
+        if cube_meta["Percent 2 Peaks"] > 0:
+             cube_meta["Average Separation"] = np.mean(cube_table["separation"][cube_table["num_peaks"]>1]),
+             cube_meta["Average Angular Separation"] = np.mean(cube_table["ang_sep"][cube_table["num_peaks"]>1])
+            
         cube_table.meta.update(cube_meta)
 
         # Adding UID info

@@ -1,27 +1,23 @@
-######################################
-# Radio regime specific functionlity #
-######################################
+###################################
+# Free-free emission functionlity #
+###################################
 
 import numpy as np
 
-from itertools import combinations
-
-from astropy.table import QTable
+from astropy.table import QTable, Column
+from astropy.modeling.physical_models import BlackBody
 
 import astropy.units as u
 import astropy.constants as c
 
 from scipy.interpolate import griddata
-from scipy import ndimage
 
-from skimage.feature import peak_local_max
-
-from .utils import parsed_angle, xy2polar
+from .utils import normalize_frequency
 
 
 def kappa_ff(teff, freq, ni, Z=1.128):
     """
-    Calculating $\kappa_\nu$. Free-free absorption coefficient
+    Calculating kappa_ff. Free-free absorption coefficient
     TODO: add references
 
 
@@ -64,7 +60,7 @@ def kappa_ff(teff, freq, ni, Z=1.128):
     return (0.0178 * Z**2 * gff / (np.power(teff,1.5)*freq**2) * (ni/2)**2) / u.cm
 
 
-def make_radio_image(field_table, sidelen_pix, sidelen_rad=None, distance=None):
+def freefree_image(field_table, obs_freq, sidelen_pix, sidelen_rad=None, distance=None, kff_col="kappa_ff"):
     """
     Given a magnetic field table with necessary columns (TODO: specify)
     and a pixel size, create an intensity image along the x-direction
@@ -79,6 +75,7 @@ def make_radio_image(field_table, sidelen_pix, sidelen_rad=None, distance=None):
     if not all(x in field_table.colnames for x in ['x', 'y', 'z']):
         raise TypeError("X,Y,Z columns must be present to make  image.")
 
+
     rss = field_table.meta["Source Surface Radius"]/field_table.meta["Radius"]
     if sidelen_rad is None:
         edge = rss
@@ -90,16 +87,15 @@ def make_radio_image(field_table, sidelen_pix, sidelen_rad=None, distance=None):
     grid_z, grid_x, grid_y = np.meshgrid(np.linspace(-edge,edge,sidelen_pix), 
                                          np.linspace(edge,-edge,sidelen_pix), 
                                          np.linspace(-edge,edge,sidelen_pix))
-    
-    
+   
     # The all important interpolation step
     grid_blackbody = griddata(list(zip(field_table["x"].data, field_table["y"].data, field_table["z"].data)), 
                               field_table["blackbody"], (grid_x, grid_y, grid_z), 
                               method='nearest', fill_value=0)*field_table["blackbody"].unit
 
     grid_kappa = griddata(list(zip(field_table["x"].data, field_table["y"].data, field_table["z"].data)), 
-                          field_table["kappa_ff"], (grid_x, grid_y, grid_z), 
-                          method='nearest', fill_value=0)*field_table["kappa_ff"].unit
+                          field_table[kff_col], (grid_x, grid_y, grid_z), 
+                          method='nearest', fill_value=0)*field_table[kff_col].unit
     
     # Making everything beyond the source surface 0 (i.e. removing everything outside our model volume)
     beyond_scope = ((grid_x**2 + grid_y**2 + grid_z**2) > rss**2)
@@ -127,76 +123,3 @@ def make_radio_image(field_table, sidelen_pix, sidelen_rad=None, distance=None):
         image = (image * (px_sz/distance)**2 * np.pi*u.sr).to(u.mJy)
 
     return image
-
-
-def get_greatest_sep(props):
-    """
-    Get the largest distance between two or more points.
-    """
-    
-    bestij = [0,0]
-    bestdist = 0
-    for i,j in combinations(range(len(props)),2):
-
-        dist = np.sqrt((props["x"][j] - props["x"][i])**2 + (props["y"][j] - props["y"][i])**2)
-        
-        if dist > bestdist:
-            bestdist = dist
-            bestij = [i,j]
-            
-    return bestdist, bestij
-
-def smooth_img(img, px_sz, beam_size):
-    """
-    px_sz and beam_size (beam diameter) in R*
-    """
-    
-    # Get the beam radius in px
-    r = int((beam_size/px_sz)//2)
-
-    if np.sum(np.isclose(img, img.max()))/img.size > 0.4:
-        trunc = 4
-    elif np.sum(np.isclose(img, img.max()))/img.size > 0.1:
-        trunc = 3
-    else:
-        trunc = 2
-    
-    return ndimage.gaussian_filter(img/img.mean(), sigma=r-trunc, truncate=trunc, mode='constant')
-
-
-def get_image_lobes(image_array, px_sz, beam_size):
-    """
-    TODO
-
-    px_sz and beam_size (beam diameter) in R* (or really just the same units)
-    """
-
-
-    # Get smoothed image
-    im = smooth_img(image_array, px_sz, beam_size)
-
-    # Get the peaks
-    coordinates = peak_local_max(im, min_distance=1, exclude_border=False)
-
-    props = QTable(names=["y","x"], rows=coordinates)
-    xpix,ypix = im.shape
-    props['r'], props['theta'] = xy2polar(props['x'], props['y'], (xpix/2, ypix/2))
-    
-    props.meta["Pixel size"] = px_sz
-    
-    if len(props) < 2: # one one peak, so we'll call this the one blob situation
-        props.meta["Seperation"] = 0*px_sz 
-        props.meta["Angular separation"] = 0*u.deg
-        return props    
-    
-    bestdist, bestij = get_greatest_sep(props)
-
-    props.meta["Seperation"] = bestdist*px_sz 
-    
-    dist = np.abs(props['theta'][bestij[0]] - props['theta'][bestij[1]])
-    if dist > 180*u.deg:
-        dist = 360*u.deg - dist
-    
-    props.meta["Angular separation"] = dist
-    
-    return props

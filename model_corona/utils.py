@@ -46,6 +46,17 @@ def make_serializable(thing):
         return (make_serializable(thing.value), thing.unit.to_string())
     elif isinstance(thing, (list, np.ndarray)):
         return [make_serializable(x) for x in thing]
+
+    # Dealing with stupid np data types
+    elif isinstance(thing, (np.int_, np.intc, np.intp, np.int8, np.int16, np.int32,
+                            np.int64, np.uint8, np.uint16, np.uint32, np.uint64)):
+        return int(thing)
+    elif isinstance(thing, (np.float16, np.float32, np.float64)):
+        return float(thing)
+    elif isinstance(thing, (np.bool_)):
+        return bool(thing)
+
+    # Everything else
     else:
         return thing
 

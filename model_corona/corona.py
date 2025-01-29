@@ -16,11 +16,12 @@ import astropy.constants as c
 import astropy.units as u
 
 from .freefree import kappa_ff, freefree_image
+from .ecm import ecmfrac_calc, dynamic_spectrum
 from .utils import parsed_angle, make_serializable, read_serialized, normalize_frequency
 from .analysis import get_image_lobes
 
 
-class ModelImage(u.Quantity):
+class ModelArray(u.Quantity):
     meta = MetaData()
 
     def write(self, filename):
@@ -59,12 +60,26 @@ class ModelImage(u.Quantity):
         return self.meta.get("Distance")
 
     @property
-    def observation_freq(self):
-        return self.meta.get('Observation frequency')
-
-    @property
     def observation_angle(self):
         return self.meta.get('Observation angle')
+
+    @property
+    def uid(self):
+        uid = self.meta.get('UID')
+        if uid is None:
+            uid = md5(self).hexdigest()
+        return uid
+
+    @property
+    def parent_uid(self):
+        return self.meta.get("Parent UID")
+    
+
+class ModelImage(ModelArray):
+
+    @property
+    def observation_freq(self):
+        return self.meta.get('Observation frequency')
 
     @property
     def phase(self):
@@ -87,18 +102,46 @@ class ModelImage(u.Quantity):
     def flux(self):
         return self.meta.get('Total Flux')
 
-    @property
-    def uid(self):
-        uid = self.meta.get('UID')
-        if uid is None:
-            uid = md5(self).hexdigest()
-        return uid
+
+class ModelDynamicSpectrum(ModelArray):
 
     @property
-    def parent_uid(self):
-        return self.meta.get("Parent UID")
+    def phases(self):
+        return self.meta.get("Phases")
+
+    @property
+    def freqs(self):
+        return self.meta.get("Frequencies")
+
+    @property
+    def ejected_mass(self):
+        return self.meta.get("Ejected Mass")
+
+    @property
+    def ejected_lines(self):
+        return self.meta.get("Ejected Line IDs")
+
+    @property
+    def tau(self):
+        return self.meta.get("Tau")
+
+    @property
+    def epsilon(self):
+        return self.meta.get("Epsilon")
+
+    @property
+    def sigma(self):
+        return self.meta.get("Sigma")
+
+    @property
+    def light_curve(self):
+        return np.mean(self, axis=0)
+
+    @property
+    def sed(self):
+        return np.mean(self, axis=1)
+
     
-
 class PhaseCube(QTable):     
 
     @property
@@ -221,7 +264,12 @@ class ModelCorona(QTable):
         instance.meta["Radius"] = radius
 
         # Source surface radius
-        rss = model_parms.pop('rss', None) if 'rss' in model_parms.keys() else instance.meta.get("Source Surface Radius")
+        if 'rss' in model_parms.keys():
+            rss = model_parms.pop('rss', None)
+        elif 'Rss' in model_parms.keys():
+            rss = model_parms.pop('Rss', None)
+        else:
+            rss = instance.meta.get("Source Surface Radius")
 
         if rss is None:
             raise AttributeError("No source surface found, this is a required parameter.")
@@ -302,7 +350,6 @@ class ModelCorona(QTable):
         # Recording the observation frequency in the metadata
         self.meta["Observation frequencies"] = np.concatenate((self.meta.get("Observation frequencies", []*u.GHz),
                                                                [obs_freq]))
-
 
     def clear_observation_freqs(self, obs_freqs="all"):
 
@@ -459,8 +506,8 @@ class ModelCorona(QTable):
 
     def _add_bb_col(self, obs_freq):
         """
-        The blackbody column is not labelled by frequeny so in general
-        this function shoudl not be called by the user.
+        The blackbody column is not labelled by frequency so in general
+        this function should not be called by the user.
         """
 
         if not hasattr(self, 'bb_corona'):
@@ -569,7 +616,7 @@ class ModelCorona(QTable):
 
         if (obs_angle is None) & (self.observation_angle is None):
             raise AttributeError("Observation angle neither supplied nor already set.")
-        elif obs_angle:
+        elif obs_angle is not None:
             obs_angle = parsed_angle(obs_angle)
         else:
             obs_angle = self.observation_angle
@@ -631,11 +678,70 @@ class ModelCorona(QTable):
 
         return cube_table
 
+    
+    def dynamic_spectrum(self, freqs, phases, field_lines, tau, epsilon=0.1, sigma=1*u.deg,
+                         harmonic=1, distance=None, obs_angle=None):
+        """
+        Return ECM dynamic spectrum
 
-    
-    
-
-    
         
+        """
+
+        # Setting up the distance
+        if (distance is None) & (self.distance is None):
+            raise AttributeError("Distance neither supplied nor already set.")
+        elif distance is not None:
+            self.distance = distance
+
+        # Turning the field_lines into an array of line numbers
+        if isinstance(field_lines, str) and (field_lines == "prom"):
+            field_lines = np.unique(model["line_num"][model.prom])
+        elif isinstance(field_lines, int):
+            field_lines = [field_lines]
+        # TODO: obv there are still a lot of ways this could error out
+        
+        # Setting up the observation angle
+        if (obs_angle is None) & (self.observation_angle is None):
+            raise AttributeError("Observation angle neither supplied nor already set.")
+        elif obs_angle is not None:
+            self.observation_angle = obs_angle
+
+            
+        # Making sure the one-time work is done
+        # this needs better error handling
+        if (not "ECM valid" in self.colnames) or (self.meta.get("ECM Harmonic") != harmonic):
+            ecmfrac_calc(self, harmonic)
+            self.meta["ECM Harmonic"] = harmonic
+
+        #if (self["ecm_frac"] == 0).all(): 
+        #    raise ValueError("No ECM possible.")
+
+        dyn_spec, freqs, phases, bin_edges = dynamic_spectrum(self, freqs, phases, field_lines, tau, epsilon, sigma)
+
+        spec_meta = {"Observation angle": self.observation_angle,
+                     "Distance": self.distance,
+                     "Phases": phases,
+                     "Frequencies": freqs,
+                     "Ejected Mass": self["Mprom"][np.isin(self["line_num"], field_lines)].sum(),
+                     "Ejected Line IDs": np.array(field_lines),
+                     "Harmonic": harmonic,
+                     "Tau": tau,
+                     "Epsilon": epsilon,
+                     "Sigma": sigma,
+                     "Frequency bin edges": bin_edges}
+        
+        dyn_spec = ModelDynamicSpectrum(dyn_spec)
+        dyn_spec.meta.update(spec_meta)
+
+        # Adding UID info
+        dyn_spec.meta["UID"] = dyn_spec.uid
+        dyn_spec.meta["Parent UID"] = self.uid
+        
+        return dyn_spec
 
 
+    
+
+
+
+   

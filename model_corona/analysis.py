@@ -10,6 +10,7 @@ from astropy.table import QTable
 import astropy.units as u
 
 from scipy import ndimage
+from scipy.signal import find_peaks
 
 from skimage.feature import peak_local_max
 
@@ -88,3 +89,26 @@ def get_image_lobes(image_array, px_sz, beam_size):
     props.meta["Angular separation"] = dist
     
     return props
+
+
+def get_lightcurve_peaks(lc_arr, tm_arr):
+    """
+    This is SUCH a work in process function.
+    """
+
+    
+    peak_inds, _ = find_peaks(lc_arr) # TODO: allow control for this?
+
+    temp_dict = {"LC Index": peak_inds,
+                 "Flux": lc_arr[peak_inds],
+                 "Phase": tm_arr[peak_inds]}
+
+    peak_tbl = QTable(temp_dict)
+    peak_tbl.sort("Flux")
+    peak_tbl.reverse()
+    
+    return peak_tbl
+
+
+    
+    

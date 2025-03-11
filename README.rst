@@ -25,7 +25,7 @@ For active developement intall in develop mode
 Testing
 ^^^^^^^
 Testing is run with `tox <https://tox.readthedocs.io>`_ (``pip install tox``).
-Tests can be found in ``model_corona/tests/``.
+Tests can be found in ``corona_lab/tests/``.
 
 .. code-block:: bash
 
@@ -42,7 +42,7 @@ You can specify a single directory or file to test as:
 
 .. code-block:: bash
 
-    $ pytest model_corona/tests/test_radio.py
+    $ pytest corona_lab/tests/test_radio.py
 
 Codestyle can be checked with:
 
@@ -69,7 +69,7 @@ You can also build the documentation with Sphinx directly using:
     $ cd docs
     $ make html
     
-The built docs will be in ``docs/_build/html/``, to view them go to ``file:///path/to/model_corona/repo/docs/_build/html/index.html`` in the browser of your choice.
+The built docs will be in ``docs/_build/html/``, to view them go to ``file:///path/to/corona_lab/repo/docs/_build/html/index.html`` in the browser of your choice.
 
 
 

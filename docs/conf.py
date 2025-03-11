@@ -6,16 +6,39 @@
 # full list see the documentation:
 # http://www.sphinx-doc.org/en/master/config
 
+import datetime
+import os
+import sys
+import tomllib
+
+with open(os.path.join(os.path.dirname(__file__), '..', 'pyproject.toml'), "rb") as FLE:
+    conf = tomllib.load(FLE)
+
+setup_cfg = conf['project']
+
 
 # -- Project information -----------------------------------------------------
 
-project = 'Model Corona'
-copyright = '2023, St Andrews Cool Stars Group'
-author = 'St Andrews Cool Stars Group'
+project = setup_cfg['name']
+author = ','.join([x["name"] for x in setup_cfg['authors']])
+copyright = '{0}, {1}'.format(
+    datetime.datetime.now(datetime.timezone.utc).year, author)
+
+__import__(project)
+package = sys.modules[project]
+
+# The short X.Y version.
+version = package.__version__.split('-', 1)[0]
+# The full version, including alpha/beta/rc tags.
+release = package.__version__
+
+#project = 'Model Corona'
+#copyright = '2023, St Andrews Cool Stars Group'
+#author = 'St Andrews Cool Stars Group'
 
 # The full version, including alpha/beta/rc tags
-from model_corona import __version__
-release = __version__
+#from model_corona import __version__
+#release = __version__
 
 # -- General configuration ---------------------------------------------------
 
@@ -34,6 +57,7 @@ extensions = [
     'sphinx.ext.mathjax',
     'sphinx_automodapi.automodapi',
     'sphinx_automodapi.smart_resolver',
+     "sphinx_design"
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -65,7 +89,16 @@ html_theme = 'pydata_sphinx_theme'
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-# html_static_path = ['_static']
+
+html_static_path = ["_static"]
+#html_css_files = ["_static/astroquery.css"]
+html_favicon = "_static/corona.ico"
+html_copy_source = False
+
+html_title = '{0} v{1}'.format(project, release)
+
+# Output file base name for HTML help builder.
+htmlhelp_basename = project + 'doc'
 
 # By default, when rendering docstrings for classes, sphinx.ext.autodoc will 
 # make docs with the class-level docstring and the class-method docstrings, 

@@ -1,0 +1,44 @@
+<html>
+  <body>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+      <div class="mermaid">
+    
+        classDiagram
+          class corona_lab {
+          }
+          class analysis {
+          }
+          class build_corona {
+          }
+          class corona {
+          }
+          class ecm {
+          }
+          class freefree {
+          }
+          class tests {
+          }
+          class test_freefree {
+          }
+          class test_model {
+          }
+          class test_utils {
+          }
+          class utils {
+          }
+          class version {
+          }
+          corona_lab --> version
+          analysis --> utils
+          build_corona --> corona_lab
+          build_corona --> corona
+          corona --> analysis
+          corona --> ecm
+          corona --> freefree
+          corona --> utils
+          ecm --> utils
+          freefree --> utils
+  
+       </div>
+  </body>
+</html>

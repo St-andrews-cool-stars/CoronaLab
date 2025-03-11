@@ -1,12 +1,10 @@
 [project]
-name = "model_corona"
-description = "Implements a PFSS model with stellar prominences."
+name = "corona_lab"
+description = "Tool for created synthetic observations from a model stellar magnetic corona."
 readme = "README.rst"
 requires-python = ">=3.8"
 license = { file = "licenses/LICENSE.rst", content-type = "text/plain" }
-authors = [
-  { name = "St Andrews Cool Stars Group", email = "cb432@st-andrews.ac.uk" },
-]
+authors = [ {name = "C. E. Brasseur", email = "cb432@st-andrews.ac.uk"}]
 dependencies = [
     "astropy",
     "scipy",
@@ -24,6 +22,7 @@ docs = [
     "sphinx",
     "sphinx-automodapi",
     "tomli; python_version <\"3.11\"",
+    "pydata-sphinx-theme"
 ]
 
 
@@ -47,11 +46,11 @@ include-package-data = true
 [tool.setuptools.packages.find]
 
 [tool.setuptools_scm]
-write_to = "model_corona/version.py"
+write_to = "corona_lab/version.py"
 
 [tool.pytest.ini_options]
 testpaths = [
-  "model_corona",
+  "corona_lab",
   "docs",
 ]
 doctest_plus = "enabled"
@@ -60,20 +59,20 @@ addopts = "--doctest-rst"
 
 [tool.coverage.run]
 omit = [
- "model_corona/__init*",
- "model_corona/conftest.py",
- "model_corona/*setup_package*",
- "model_corona/tests/*",
- "model_corona/*/tests/*",
- "model_corona/extern/*",
- "model_corona/version*",
- "*/model_corona/__init*",
- "*/model_corona/conftest.py",
- "*/model_corona/*setup_package*",
- "*/model_corona/tests/*",
- "*/model_corona/*/tests/*",
- "*/model_corona/extern/*",
- "*/model_corona/version*",
+ "corona_lab/__init*",
+ "corona_lab/conftest.py",
+ "corona_lab/*setup_package*",
+ "corona_lab/tests/*",
+ "corona_lab/*/tests/*",
+ "corona_lab/extern/*",
+ "corona_lab/version*",
+ "*/corona_lab/__init*",
+ "*/corona_lab/conftest.py",
+ "*/corona_lab/*setup_package*",
+ "*/corona_lab/tests/*",
+ "*/corona_lab/*/tests/*",
+ "*/corona_lab/extern/*",
+ "*/corona_lab/version*",
 ]
 
 [tool.coverage.report]

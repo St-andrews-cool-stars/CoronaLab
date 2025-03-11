@@ -22,7 +22,7 @@ from sunkit_magex import pfss as pfsspy
 from sunkit_magex.pfss import coords, tracing
 from sunkit_magex.pfss.grid import Grid
 
-from model_corona import corona
+from corona_lab import corona
 
 
 
@@ -35,7 +35,7 @@ class FieldlineProcessor():
     TODO: rename
     """
 
-    def __init__(self, radius, mass, period, verbose=False):
+    def __init__(self, radius, mass, period, mean_ptc_mass=0.5*(c.m_p + c.m_e), verbose=False):
 
         
         # Add units checking for these
@@ -45,7 +45,7 @@ class FieldlineProcessor():
         
         self.verbose = verbose
         
-        self.mean_ptc_mass = 0.5*(c.m_p + c.m_e)  # Assume fully ionized hydrogen
+        self.mean_ptc_mass = mean_ptc_mass  # default is fully ionized hydrogen
 
         self.kappa_p = None
         self.T_cor = None
@@ -116,7 +116,7 @@ class FieldlineProcessor():
         # the proper units are wrapped up in kappa_p
         p0 = (self.kappa_p * 0.5*((fieldline["Bmag"][0].to(u.G).value)**2 +
                                  (fieldline["Bmag"][-1].to(u.G).value)**2) * u.Pa)  
-        mdot = ((p0/self.c_sound**2) * self.wind_vel * fieldline["dA_c"][0]).si
+        mdot = ((p0/self.c_sound**2) * self.wind_vel * fieldline["dA_c"][0]).si # TODO: is this used?
 
         bsign = (int(fieldline["Brad"][0].value > 0) * 2) - 1 # 1 or -1 for positive/negative B_rad respectively
  

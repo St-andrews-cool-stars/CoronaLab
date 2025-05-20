@@ -8,7 +8,9 @@ authors = [ {name = "C. E. Brasseur", email = "cb432@st-andrews.ac.uk"}]
 dependencies = [
     "astropy",
     "scipy",
-    "scikit-image"
+    "scikit-image",
+    "sunpy",
+    "sunkit-magex"
   
 ]
 dynamic = ["version"]
@@ -22,7 +24,8 @@ docs = [
     "sphinx",
     "sphinx-automodapi",
     "tomli; python_version <\"3.11\"",
-    "pydata-sphinx-theme"
+    "pydata-sphinx-theme",
+    "matplotlib"
 ]
 
 

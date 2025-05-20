@@ -1,3 +1,4 @@
 Sphinx==7.3.7
 sphinx-astropy==1.9.1
 pydata-sphinx-theme==0.16.1
+sphinx_design==0.6.1

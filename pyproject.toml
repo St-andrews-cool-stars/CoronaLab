@@ -27,7 +27,7 @@ docs = [
 
 
 [project.urls]
-repository = "https://github.com/St-andrews-cool-stars/model_corona.git" 
+repository = "https://github.com/St-andrews-cool-stars/CoronaLab.git" 
 
 
 [build-system]

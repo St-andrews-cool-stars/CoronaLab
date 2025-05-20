@@ -22,9 +22,59 @@ from .analysis import get_image_lobes
 
 
 class ModelArray(u.Quantity):
+    """
+    Quantitative array with associated metadata, supporting serialization to and from JSON files.
+    Base class for array-based synthetic observation classes.
+
+    Parameters
+    ----------
+    value : array-like
+        Numeric data array.
+    unit : ~astropy.units.Quantity or str or ~astropy.units.Unit
+        Unit for the array values. Can be an `astropy.units.Unit` object, a
+        `~astropy.units.Quantity` (unit part is used), or a string parsable
+        by `u.Unit`.
+    meta : dict, optional
+        Initial metadata dictionary.
+        Defaults to an empty metadata container.
+
+    Attributes
+    ----------
+    meta : MetaData
+        Metadata container for storing arbitrary key–value pairs.
+    unit : ~astropy.units.Unit
+        Physical unit of the array values.
+    value : numpy.ndarray
+        Underlying numeric data array.
+
+    Notes
+    -----
+    Inherits from `~astropy.units.Quantity`, so all Quantity operations
+    apply to `ModelArray` instances.
+    """
+
     meta = MetaData()
 
     def write(self, filename):
+        """
+        Serialize this ModelArray to a JSON file.
+
+        The output file will contain:
+        - `"meta"`: metadata dictionary, JSON-serializable.
+        - `"unit"`: unit string, as from `~astropy.units.Unit.to_string()`.
+        - `"array"`: raw array data encoded in Latin-1 after being saved
+          with `numpy.save`.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the JSON file to write. Overwrites existing files.
+
+        Raises
+        ------
+        IOError
+            If the file cannot be written.
+        """
 
         # TODO: add checking for existing file (and overwrite arg)
 
@@ -41,6 +91,27 @@ class ModelArray(u.Quantity):
 
     @classmethod
     def read(cls, filename):
+        """
+        Deserialize a ModelArray from a JSON file.
+
+        Reads the JSON file written by `write()`, reconstructs the array,
+        unit, and metadata.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the JSON file to read.
+
+        Returns
+        -------
+        ModelArray
+            New instance created from the file contents.
+
+        Raises
+        ------
+        IOError
+            If the file cannot be read.
+        """
 
         with open(filename, "r") as FLE:
             img_dict = json.load(FLE)
@@ -76,6 +147,36 @@ class ModelArray(u.Quantity):
     
 
 class ModelImage(ModelArray):
+    """
+    Class for holding synthetic image data.
+    Quantitative array with associated metadata, supporting serialization to and from JSON files.
+    
+    Parameters
+    ----------
+    value : array-like
+        Numeric data array.
+    unit : ~astropy.units.Quantity or str or ~astropy.units.Unit
+        Unit for the array values. Can be an `astropy.units.Unit` object, a
+        `~astropy.units.Quantity` (unit part is used), or a string parsable
+        by `u.Unit`.
+    meta : dict, optional
+        Initial metadata dictionary.
+        Defaults to an empty metadata container.
+
+    Attributes
+    ----------
+    meta : MetaData
+        Metadata container for storing arbitrary key–value pairs.
+    unit : ~astropy.units.Unit
+        Physical unit of the array values.
+    value : numpy.ndarray
+        Underlying numeric data array.
+
+    Notes
+    -----
+    Inherits from `~astropy.units.Quantity`, so all Quantity operations
+    apply to `ModelImage` instances.
+    """
 
     @property
     def observation_freq(self):
@@ -104,6 +205,36 @@ class ModelImage(ModelArray):
 
 
 class ModelDynamicSpectrum(ModelArray):
+    """
+    Class for holding a synthetic dynamic spectrum.
+    Quantitative array with associated metadata, supporting serialization to and from JSON files.
+    
+    Parameters
+    ----------
+    value : array-like
+        Numeric data array.
+    unit : ~astropy.units.Quantity or str or ~astropy.units.Unit
+        Unit for the array values. Can be an `astropy.units.Unit` object, a
+        `~astropy.units.Quantity` (unit part is used), or a string parsable
+        by `u.Unit`.
+    meta : dict, optional
+        Initial metadata dictionary.
+        Defaults to an empty metadata container.
+
+    Attributes
+    ----------
+    meta : MetaData
+        Metadata container for storing arbitrary key–value pairs.
+    unit : ~astropy.units.Unit
+        Physical unit of the array values.
+    value : numpy.ndarray
+        Underlying numeric data array.
+
+    Notes
+    -----
+    Inherits from `~astropy.units.Quantity`, so all Quantity operations
+    apply to `ModelDynamicSpectrum` instances.
+    """
 
     @property
     def phases(self):
@@ -142,7 +273,29 @@ class ModelDynamicSpectrum(ModelArray):
         return np.mean(self, axis=1)
 
     
-class PhaseCube(QTable):     
+class PhaseCube(QTable):
+    """
+    Table of synthetic observations accross rotation phases with associated
+    metadata for frequency, angle, and pixel properties.
+
+    Inherits from `~astropy.table.QTable`, adding convenience properties for
+    accessing metadata fields related to the associated corona model
+
+    Parameters
+    ----------
+    data : array-like or dict or `~astropy.table.Table`
+        Table data to initialize the PhaseCube.
+    meta : dict, optional
+        Initial metadata dictionary. Keys should match expected properties
+        (e.g., 'Observation frequency', 'Pixel size'). Defaults to empty.
+
+    Attributes
+    ----------
+    meta : dict
+        Metadata container storing observational parameters.
+    columns : `~astropy.table.Column` instances
+        Columns inherited from `QTable`.
+    """
 
     @property
     def observation_freq(self):
@@ -184,6 +337,28 @@ class PhaseCube(QTable):
 
 
 class FrequencyCube(QTable):
+    """
+    Table of synthetic observations accross observing frequencies with
+    associated metadata for frequency, angle, and pixel properties.
+
+    Inherits from `~astropy.table.QTable`, adding convenience properties for
+    accessing metadata fields related to the associated corona model.
+
+    Parameters
+    ----------
+    data : array-like or dict or `~astropy.table.Table`
+        Table data to initialize the PhaseCube.
+    meta : dict, optional
+        Initial metadata dictionary. Keys should match expected properties
+        (e.g., 'Observation frequency', 'Pixel size'). Defaults to empty.
+
+    Attributes
+    ----------
+    meta : dict
+        Metadata container storing observational parameters.
+    columns : `~astropy.table.Column` instances
+        Columns inherited from `QTable`.
+    """
 
     @property
     def observation_angle(self):
@@ -214,6 +389,23 @@ class FrequencyCube(QTable):
     
 
 class ModelCorona(QTable):
+    """
+    Table of model coronal field–line data with computed properties and metadata.
+
+    Wraps an `~astropy.table.QTable` containing stellar corona field‐line columns
+    (e.g., `radius`, `theta`, `phi`, `Bmag`, `ndens`, `temperature`, `line_num`)
+    and adds methods and metadata for modeling coronal emission, absorption,
+    geometry, and dynamics.
+
+    Notes
+    -----
+    - Many properties and methods assume the presence of specific metadata
+      entries; missing keys typically return `None` or raise an error if required.
+    - All quantities stored in `meta` should be `~astropy.units.Quantity` where
+      appropriate, and methods will interpret plain numerics in standard units
+      (parsecs, solar radii, GHz, degrees) when setting metadata.
+    - The class uses MD5 hashing of core data arrays to generate stable UIDs.
+    """
 
     @classmethod
     def from_field_lines(cls, input_table, **model_parms):
@@ -235,7 +427,7 @@ class ModelCorona(QTable):
 
         Returns
         -------
-        response : `ModelCorona`
+        `ModelCorona`
             ModelCorona object with the given field lines and metadata.
         """
 
@@ -303,6 +495,7 @@ class ModelCorona(QTable):
         phase = model_parms.pop('phase', None) if 'phase' in model_parms.keys() else instance.meta.get("Phase")
 
         if obs_angle is not None:
+            # TODO: add check for other ways it could be invalid
             phase = 0 if phase is None else phase
             instance.add_cartesian_coords(obs_angle, phase)
 
@@ -319,6 +512,15 @@ class ModelCorona(QTable):
 
     @property
     def distance(self):
+        """
+        Returns
+        -------
+        `~astropy.units.Quantity`
+            Distance to the star in parsecs.
+
+        When setting this property, if the input is not a `~astropy.units.Quantity`,
+        it is assumed to be in parsecs and converted accordingly. 
+        """
         return self.meta.get("Distance")
 
     @distance.setter
@@ -329,11 +531,33 @@ class ModelCorona(QTable):
 
     @property
     def observation_freqs(self):
+        """
+        Returns
+        -------
+        `~astropy.units.Quantity`
+            Observation frequencies for which the free-free
+            absoption coefficient has been calculated.
+        """
         return self.meta.get('Observation frequencies', []*u.GHz)
 
     def add_observation_freq(self, obs_freq, cache=True):
         """
-        Add freq specific column. "<obs_freq> Kappa_ff"
+        Add a frequency-specific column for free-free absorption coefficient.
+
+        Computes the free-free absorption coefficient (`kappa_ff`) at a given
+        observation frequency and stores the result in a column named
+        "<obs_freq> Kappa_ff". If the frequency has already been computed and
+        `cache` is True, the method skips recomputation.
+
+        Parameters
+        ----------
+        obs_freq : float or astropy.units.Quantity
+            The observation frequency to compute `kappa_ff` for. If not a Quantity,
+        the value is assumed to be in GHz.
+    
+        cache : bool, optional
+            Whether to skip recomputation if the frequency already exists in
+        the metadata. Default is True.
         """
 
         obs_freq = normalize_frequency(obs_freq)
@@ -352,7 +576,20 @@ class ModelCorona(QTable):
                                                                [obs_freq]))
 
     def clear_observation_freqs(self, obs_freqs="all"):
+        """
+        Remove one or more observation frequencies and their associated data.
 
+        Deletes the `<freq> Kappa_ff` columns and removes the corresponding
+        frequencies from the metadata. By default, all frequencies are cleared.
+
+        Parameters
+        ----------
+        obs_freqs : str, scalar, Quantity, or list of Quantity, optional
+            The observation frequency or list of frequencies to remove. Can be:
+            - "all" (default): removes all stored observation frequencies.
+            - Single frequency (e.g., 5.0 or 5.0 * u.GHz).
+            - List or array of frequencies.
+        """
         if obs_freqs == "all":
             obs_freqs = self.observation_freqs
         elif (not isinstance(obs_freqs, u.Quantity) and  np.isscalar(obs_freqs)) or \
@@ -362,7 +599,7 @@ class ModelCorona(QTable):
         for freq in obs_freqs:
             freq = normalize_frequency(freq)
 
-            if not freq in self.observation_freqs: # Freq is not actuall in our table
+            if not freq in self.observation_freqs: # Freq is not actually in our table
                 continue
 
             self.remove_column(f"{freq} Kappa_ff")
@@ -373,19 +610,38 @@ class ModelCorona(QTable):
         
     def add_cartesian_coords(self, obs_angle, phase=0, recalculate=False):
         """
-        Given a viewing angle and optional phase add columns with the cartesian coordinats for each row.
-        Assumes field_table has columns radius, theta, phi
+        Compute and add Cartesian coordinates (x, y, z) from spherical coordinates.
 
-        Note, this goes into a right handed cartesian coordinate system.
+        Given a viewing angle (`obs_angle`) and an optional rotation (`phase`),
+        this function computes the Cartesian coordinates assuming a right-handed
+        coordinate system and stores them in columns ('x', 'y', 'z') in the table.
+
+        The transformation assumes the existence of `radius`, `theta`, and `phi`
+        columns. If the coordinates have already been computed for the given angle
+        and phase and `recalculate` is False, the computation is skipped.
+
+        Parameters
+        ----------
+        obs_angle : float, tuple, or Quantity
+            Observation angle as a tuple (phi, theta) or parsable input.
+            Units should be convertible to degrees.
+
+        phase : float or Quantity, optional
+            Rotation to apply around the z-axis (in degrees). Default is 0.
+
+        recalculate : bool, optional
+            If False, avoids recomputation when current coordinates already match
+            the provided angle and phase. Default is False.
         """
-        
+
         obs_angle = parsed_angle(obs_angle)
         phase = parsed_angle(phase)
 
         # Check if we actually need to redo the calculation or not
         if ((not recalculate) and
             (self.meta.get("Phase") == phase) and
-            (np.isclose(self.meta.get("Observation angle", [np.nan]*2*u.deg), obs_angle).all())):
+            (np.isclose(self.meta.get("Observation angle", [np.nan]*2*u.deg), obs_angle).all()) and
+            ("x" in self.colnames)):
             return
         
         phi0, theta0 = obs_angle
@@ -408,6 +664,16 @@ class ModelCorona(QTable):
         
     @property
     def observation_angle(self):
+        """
+        Returns
+        -------
+        `~astropy.units.Quantity` or None
+            The observation angle (phi, theta) in degrees, used to compute the
+            Cartesian coordinate (x, y, z) columns.
+            None if not set.
+
+        When setting, if no units are given degrees is assumed.
+        """
         return self.meta.get('Observation angle')
 
     @observation_angle.setter
@@ -416,6 +682,14 @@ class ModelCorona(QTable):
 
     @property
     def phase(self):
+        """
+        Returns
+        -------
+        `~astropy.units.Quantity` or None
+           Value in degrees giving the phase offset applied to the
+           coordinate transformation for the Cartesian coordinate (x, y, z) columns.
+            None if not set.
+        """
         return self.meta.get('Phase')
 
     @phase.setter
@@ -426,10 +700,24 @@ class ModelCorona(QTable):
  
     @property
     def corona_temp(self):
+        """
+        Returns
+        -------
+        `~astropy.units.Quantity`
+            The temperature of the corona.
+            Calculated from the table, and therefore not settable.
+        """
         return self.meta.get("Corona Temperature")
 
     @property
     def prom_temp(self):
+        """
+        Returns
+        -------
+        `~astropy.units.Quantity`
+            The temperature of the stellar prominences.
+            Calculated form the table, and therefore not settable.
+        """
         return self.meta.get("Prominence Temperature")
 
     @property
@@ -446,14 +734,34 @@ class ModelCorona(QTable):
 
     @property
     def radius(self):
+        """
+        Returns
+        -------
+        `~astropy.units.Quantity`
+            The stellar radius.
+            Intrinsic to the model and therefore not settable.
+        """
         return self.meta.get('Radius')
 
     @property
     def rss(self):
+        """
+        Returns
+        -------
+        `~astropy.units.Quantity`
+            The model extent, i.e. source surface radius.
+            Intrinsic to the model and therefore not settable.
+        """
         return self.meta.get('Source Surface Radius')
 
     @property
     def uid(self):
+        """
+        Returns
+        -------
+        str
+            Unique identifier string for this model.
+        """
         uid = self.meta.get('UID')
         if uid is None:
             uid = md5(self['radius', 'theta', 'phi', 'Bmag', 'proms'].as_array()).hexdigest()
@@ -461,14 +769,33 @@ class ModelCorona(QTable):
 
     @property
     def wind(self):
+        """
+        Returns
+        -------
+        `numpy.ndarray`
+             Boolean mask for wind cells in the corona model.
+        """
         return self["wind"]
 
     @property
     def prom(self):
+        """
+        Returns
+        -------
+        `numpy.ndarray`
+             Boolean mask for prominence cells in the corona model.
+        """
         return self["proms"]
 
     @property
     def cor_only(self):
+        """
+        Returns
+        -------
+        `numpy.ndarray`
+            Boolean mask for model cells that are in the closed corona (not the wind)
+            but do not contain prominences.
+        """
         return ~self["wind"] & ~self["proms"]
         
     def print_meta(self):
@@ -489,15 +816,25 @@ class ModelCorona(QTable):
 
     def add_plasma_beta(self):
         r"""
-        Calculate the plasma beta (ratio of plasma pressure to magnetic pressure) for each cell:
-
+        Calculate and add the plasma β (ratio of plasma pressure to magnetic pressure) for each cell:
+        
         .. math::
-            \beta = \frac{nkT}{B^2/2\mu_0}
+            \beta = \frac{n k_B T}{B^2 / 2 \mu_0}
 
-        Note: The wind had Bmag set to 0 in it, so we must exclue those points
+        where:
+            - :math:`n` is the number density,
+            - :math:`k_B` is the Boltzmann constant,
+            - :math:`T` is the temperature,
+            - :math:`B` is the magnetic field magnitude,
+            - :math:`\mu_0` is the permeability of free space.
+
+        The value is only computed for non-wind cells, since wind regions have
+        `Bmag = 0` and would result in a division by zero.
+
+        Adds a new column `"plasma_beta"` to the table.
         """
-
-        self.add_column(Column(name="plasma_beta", length=len(self)))
+        
+        self.add_column(Column(name="plasma_beta", length=len(self))) # TODO: check for existing column
 
         p_plasma = self[~self.wind]["ndens"]*c.k_B*self[~self.wind]["temperature"]
         p_mag = self[~self.wind]["Bmag"]**2/(2*c.mu0)
@@ -506,8 +843,10 @@ class ModelCorona(QTable):
 
     def _add_bb_col(self, obs_freq):
         """
-        The blackbody column is not labelled by frequency so in general
-        this function should not be called by the user.
+        Add a blackbody column for a given observing frequency/
+        
+        The blackbody column is not labeled by frequency so this function will
+        be frequency overwritten, and in general should not be called by the user. 
         """
 
         if not hasattr(self, 'bb_corona'):
@@ -542,7 +881,7 @@ class ModelCorona(QTable):
         
         Returns
         -------
-        response : `ModelImage`
+        `ModelImage`
             The calculated radio image as a RadioImage object, which is a `astropy.units.Quantity`
             array with metadata.
         """
@@ -573,7 +912,7 @@ class ModelCorona(QTable):
         else:
             px_sz = sidelen_rad/sidelen_pix
 
-        image = freefree_image(self, obs_freq, sidelen_pix, sidelen_rad, self.distance, kff_col=f"{obs_freq} Kappa_ff")   
+        image = freefree_image(self, sidelen_pix, sidelen_rad, self.distance, kff_col=f"{obs_freq} Kappa_ff")   
         image_meta = {"Observation frequency": obs_freq,
                       "Observation angle": self.observation_angle,
                       "Stellar Phase":  self.phase,
@@ -598,19 +937,63 @@ class ModelCorona(QTable):
     def radio_phase_cube(self, obs_freq, num_steps, sidelen_pix, beam_size, *, sidelen_rad=None,
                         obs_angle=None, min_phi=0*u.deg, max_phi=360*u.deg):
         """
-        Make a number (square) radio image given the current object parameters, evenly
-        spaced between the min and max phases.
+        Generate a cube of radio images across a range of rotational phases.
 
-        TODO: this should allow ecm imagery to be added but later
-        TODO: this does not need to be so specific
+        This method computes free-free emission images at a given observation frequency
+        and viewing angle across `num_steps` rotational phases. The resulting data includes
+        flux, lobe separations, peak counts, and angular separations for each phase.
 
         Parameters
         ----------
+        obs_freq : float or `~astropy.units.Quantity`
+            The observation frequency. Will be converted to GHz if not already.
+
+        num_steps : int
+            Number of evenly spaced phases to generate between `min_phi` and `max_phi`.
+
+        sidelen_pix : int
+            Number of pixels per side of the square image.
+
+        beam_size : float or `~astropy.units.Quantity`
+            Size of the synthetic observational beam (for peak/lobe identification).
+
+        sidelen_rad : float or `~astropy.units.Quantity`, optional
+            Physical size of the image in angular units (radians). If not provided,
+            computed from the source surface radius and stellar radius.
+
+        obs_angle : float, tuple, or `~astropy.units.Quantity`, optional
+            Observation angle as (phi, theta) in degrees. If None, will use previously set value.
+
+        min_phi : `~astropy.units.Quantity`, optional
+            Starting rotational phase angle in degrees. Default is 0°.
+
+        max_phi : `~astropy.units.Quantity`, optional
+            Ending rotational phase angle in degrees. Default is 360°.
 
         Returns
         -------
-        """
+        `PhaseCube`
+            A PhaseCube object containing:
+                - phi: phase angle for each image
+                - flux: total flux from each image
+                - separation: maximum peak separation 
+                - num_peaks: number of emission peaks
+                - ang_sep: maximum angular separation
+                - image: 2D flux image (or intensity if distance is not set)
+        
+        Metadata includes observation frequency, angles, image specs, and summary stats.
 
+        Raises
+        ------
+        AttributeError
+            If no observation angle is provided or previously set.
+
+        Warnings
+        --------
+        UserWarning
+            If the stellar distance is missing, intensity is returned instead of flux.
+        """
+       
         if self.distance is None:
             warnings.warn("No distance found, the returned image will be in intensity rather than flux.")
 
@@ -643,7 +1026,7 @@ class ModelCorona(QTable):
         for phase in phase_list:
 
             self.add_cartesian_coords(obs_angle, phase)
-            image = freefree_image(self, obs_freq, sidelen_pix, sidelen_rad, self.distance, kff_col=f"{obs_freq} Kappa_ff")
+            image = freefree_image(self, sidelen_pix, sidelen_rad, self.distance, kff_col=f"{obs_freq} Kappa_ff")
             lobes = get_image_lobes(image, px_sz, beam_size)
         
             cube_dict["phi"].append(phase.to('deg'))
@@ -679,12 +1062,62 @@ class ModelCorona(QTable):
         return cube_table
 
     
-    def dynamic_spectrum(self, freqs, phases, field_lines, tau, epsilon=0.1, sigma=1*u.deg,
+    def dynamic_spectrum(self, freqs, phases, field_lines, tau, epsilon=1e-5, sigma=1*u.deg,
                          harmonic=1, distance=None, obs_angle=None):
         """
-        Return ECM dynamic spectrum
+        Generate the electron cyclotron maser (ECM) dynamic spectrum.
 
+        This method calculates the ECM emission resulting from the election of stellar prominences
+        for a given set of frequencies and rotational phases. 
+
+        Parameters
+        ----------
+        freqs : int or `astropy.units.Quantity`
+            Frequencies for the dynamic spectra. Can be:
+            - int: number of frequency bins spanning the range of ECM emission
+            - Quantity: Array of frequency bin edges
         
+        phases : int or `astropy.units.Quantity`
+            Phases for the dynamic spectra. Can be:
+            - int: number of phase bins (0-360 deg)
+            - Quantity: Array of phases
+        
+        field_lines : str, int, or array-like
+            Magnetic field lines to include in the calculation. Can be:
+            - "prom": selects all lines marked as prominences in the model,
+            - int: a single field line number,
+            - list of ints: specific field lines.
+        
+        tau : `astropy.units.Quantity`
+            Disipation timescale
+        
+        epsilon : float, optional
+            ECM efficiency factor, default 1e-5.
+        
+        sigma : Quantity or float, optional
+            A Width of the ECM emission cone, by default 1 deg, per TODO: citation.
+        
+        harmonic : int, optional
+            Harmonic number to use for ECM emission, by default 1 (fundamental).
+        
+        distance : Quantity, optional
+            Distance to the object. If None, uses `self.distance`.
+        
+        obs_angle : Quantity or float, optional
+            Observation angle. If None, uses `self.observation_angle`.
+
+        Returns
+        -------
+        `ModelDynamicSpectrum`
+            The computed dynamic spectrum, with metadata including observation
+            angle, frequencies, field lines, tau, and harmonic.
+
+        Raises
+        ------
+        AttributeError
+            If distance or observation angle is not provided and not set on the object.
+        ValueError
+            If ECM fraction is zero for all field lines.
         """
 
         # Setting up the distance
@@ -713,8 +1146,8 @@ class ModelCorona(QTable):
             ecmfrac_calc(self, harmonic)
             self.meta["ECM Harmonic"] = harmonic
 
-        #if (self["ecm_frac"] == 0).all(): 
-        #    raise ValueError("No ECM possible.")
+        if (self["ecm_frac"] == 0).all(): 
+            raise ValueError("No ECM possible.")
 
         dyn_spec, freqs, phases, bin_edges = dynamic_spectrum(self, freqs, phases, field_lines, tau, epsilon, sigma)
 

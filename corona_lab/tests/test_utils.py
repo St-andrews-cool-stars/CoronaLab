@@ -49,7 +49,8 @@ def test_serialization():
              "Thing 3": num1*unit1,
              "Thing 4": [num1*unit1, num2*unit2],
              "Thing 5": np.array((num1,num2)),
-             "Thing 6": [num2,num1]*unit2}
+             "Thing 6": [num2,num1]*unit2,
+             "Thing 7": {"a": num1, "b": num2}}
 
     serialed = utils.make_serializable(canon)
 
@@ -60,6 +61,7 @@ def test_serialization():
     assert serialed["Thing 4"] == [(num1, unit1.to_string()), (num2, unit2.to_string())]
     assert serialed["Thing 5"] == [num1,num2]
     assert serialed["Thing 6"] == ([num2,num1], unit2.to_string())
+    assert serialed["Thing 7"] == canon["Thing 7"]
 
     unserialed = utils.read_serialized(serialed)
     assert unserialed["Thing 1"] == canon["Thing 1"]
@@ -68,5 +70,6 @@ def test_serialization():
     assert unserialed["Thing 4"] == canon["Thing 4"]
     assert unserialed["Thing 5"] == list(canon["Thing 5"])
     assert (unserialed["Thing 6"] == canon["Thing 6"]).all()
+    assert unserialed["Thing 7"] == canon["Thing 7"]
     
     

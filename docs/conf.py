@@ -57,7 +57,7 @@ extensions = [
     'sphinx.ext.mathjax',
     'sphinx_automodapi.automodapi',
     'sphinx_automodapi.smart_resolver',
-     "sphinx_design"
+    'sphinx_design'
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -86,13 +86,25 @@ master_doc = 'index'
 # a list of builtin themes.
 html_theme = 'pydata_sphinx_theme'
 
+html_theme_options = {
+    "logo": {
+        "image_light": "_static/banner.svg",
+        "image_dark": "_static/banner.svg",
+    },
+    # https://github.com/pydata/pydata-sphinx-theme/issues/1492
+    "navigation_with_keys": False,
+    "navbar_align": "right"
+}
+
+
+
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 
 html_static_path = ["_static"]
-#html_css_files = ["_static/astroquery.css"]
-html_favicon = "_static/corona.ico"
+html_css_files = ["coronalab.css"]
+html_favicon = "_static/icon.png"
 html_copy_source = False
 
 html_title = '{0} v{1}'.format(project, release)

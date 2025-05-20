@@ -19,11 +19,35 @@ from .utils import xy2polar
 
 def get_greatest_sep(props):
     """
-    Get the largest distance between two or more points.
+    From two or more points determine which two are the furthest from each other, and return that distance.
+
+    Parameters
+    ----------
+    props : `~astropy.table.Table` or dict
+        A table with two columns or dictionary with two keys:
+        - 'x': The x-coordinates of the points.
+        - 'y': The y-coordinates of the points.
+
+    Returns
+    -------
+    bestdist : float
+        The largest Euclidean distance between any two points.
+    bestij : list of int
+        Indices [i, j] of the pair of points that are furthest apart.
+
+    Raises
+    ------
+    ValueError
+        If the input does not contain at least two points.
     """
+
+    # Check for at least two points
+    if len(props["x"]) < 2:
+        raise ValueError("At least two points must be supplied.")
+        
     
     bestij = [0,0]
-    bestdist = 0
+    bestdist = -1
     for i,j in combinations(range(len(props)),2):
 
         dist = np.sqrt((props["x"][j] - props["x"][i])**2 + (props["y"][j] - props["y"][i])**2)
@@ -37,8 +61,40 @@ def get_greatest_sep(props):
 
 def smooth_img(img, px_sz, beam_size):
     """
-    px_sz and beam_size (beam diameter) in R*
+    Smooth an image using a Gaussian filter based on telescope "beam size".
+
+    The standard deviation (sigma) of the Gaussian filter is derived from the
+    ratio of the beam size to pixel size. The filter's truncation is dynamically
+    chosen based on the proportion of maximum-intensity pixels in the image.
+
+    Parameters
+    ----------
+    img : ndarray
+        2D image array to be smoothed.
+    px_sz : float
+        Pixel size in R* units.
+    beam_size : float
+        Beam diameter in R* units.
+
+    Returns
+    -------
+    smoothed_img : ndarray
+        The smoothed image.
+
+    Notes
+    -----
+    - The function normalizes the input image by its mean before applying the filter.
+    - The `truncate` parameter is chosen based on the proportion of pixels close to
+      the maximum value:
+        - >40% -> truncate = 4
+        - >10% -> truncate = 3
+        - otherwise -> truncate = 2
+    - Uses 'constant' mode for filtering boundaries.
     """
+
+    # Check for constant value image
+    if (img == img[0]).all():
+        return np.ones(img.shape) # normalized array of constant value will always be 1s
     
     # Get the beam radius in px
     r = int((beam_size/px_sz)//2)
@@ -55,10 +111,40 @@ def smooth_img(img, px_sz, beam_size):
 
 def get_image_lobes(image_array, px_sz, beam_size):
     """
-    TODO
+    Identify peak regions in 2D a image.
 
-    px_sz and beam_size (beam diameter) in R* (or really just the same units)
+    The image is first smoothed using a Gaussian filter determined by the
+    beam size and pixel size. Peaks in the smoothed image are then identified,
+    and their polar coordinates relative to the image center are computed.
+    If multiple peaks are found, the function computes the greatest euclidian separation
+    between them and the corresponding angular distance.
+
+    Parameters
+    ----------
+    image_array : ndarray
+        2D image array representing intensity values.
+    px_sz : float
+        Pixel size in consistent units (e.g., R* or km).
+    beam_size : float
+        Beam diameter in the same units as `px_sz`.
+
+    Returns
+    -------
+    props : `~astropy.table.QTable`
+        Table of detected peak coordinates and derived polar coordinates.
+        The metadata includes:
+        - "Pixel size": the input pixel size.
+        - "Separation": the distance (in input units) between the two most distant peaks.
+        - "Angular separation": angular difference between the two most distant peaks.
+
+    Notes
+    -----
+    - If fewer than 2 peaks are detected, separation and angular separation are set to zero.
+    - Peaks are detected using `skimage.feature.peak_local_max`.
+    - Polar coordinates are computed with respect to the image center.
     """
+
+    # TODO: add beam size to metadata
 
 
     # Get smoothed image
@@ -66,6 +152,11 @@ def get_image_lobes(image_array, px_sz, beam_size):
 
     # Get the peaks
     coordinates = peak_local_max(im, min_distance=1, exclude_border=False)
+
+    # Deal with a constant image (no peaks)
+    if not coordinates.size:
+        coordinates = None
+    
 
     props = QTable(names=["y","x"], rows=coordinates)
     xpix,ypix = im.shape
@@ -91,23 +182,6 @@ def get_image_lobes(image_array, px_sz, beam_size):
     return props
 
 
-def get_lightcurve_peaks(lc_arr, tm_arr):
-    """
-    This is SUCH a work in process function.
-    """
-
-    
-    peak_inds, _ = find_peaks(lc_arr) # TODO: allow control for this?
-
-    temp_dict = {"LC Index": peak_inds,
-                 "Flux": lc_arr[peak_inds],
-                 "Phase": tm_arr[peak_inds]}
-
-    peak_tbl = QTable(temp_dict)
-    peak_tbl.sort("Flux")
-    peak_tbl.reverse()
-    
-    return peak_tbl
 
 
     

@@ -30,14 +30,25 @@ from corona_lab import corona
 
 class FieldlineProcessor():
     """
-    Class for building the set of magnetic field lines.
+    Class processing closed and open magnetic field lines, finding stable points and prominences,
+    for corona modeling.
 
-    TODO: rename
+    Parameters
+    ----------
+    radius : `~astropy.units.Quantity`
+        Stellar radius.
+    mass : `~astropy.units.Quantity`
+        Stellar mass.
+    period : `~astropy.units.Quantity`
+        Stellar rotation period.
+    mean_ptc_mass : `~astropy.units.Quantity`, optional
+        Mean particle mass, default is 0.5 * (proton mass + electron mass).
+    verbose : bool, optional
+        If True, prints verbose output. Default is False.
     """
 
     def __init__(self, radius, mass, period, mean_ptc_mass=0.5*(c.m_p + c.m_e), verbose=False):
 
-        
         # Add units checking for these
         self.radius = radius
         self.mass = mass
@@ -65,8 +76,21 @@ class FieldlineProcessor():
     @staticmethod
     def _find_stable_pts(radius, pressure, min_rad=1.1):
         """
-        Find stable point on a pressure line.
-        Radius needs to be in stellar radii.
+        Identify stable points along a magnetic field line based on pressure profile.
+
+        Parameters
+        ----------
+        radius : array_like
+            Radius values in units of stellar radii.
+        pressure : array_like
+            Pressure values corresponding to radius.
+        min_rad : float, optional
+            Minimum radius to consider as stable, by default 1.1.
+
+        Returns
+        -------
+        ndarray
+            Indices of stable points in the radius array.
         """
 
         cond1 = (pressure[2:-1] > pressure[1:-2]) & (pressure[2:-1] > pressure[3:])
@@ -81,16 +105,22 @@ class FieldlineProcessor():
             
     def find_prominences(self, fieldline):
         """
-        Given an individual closed field line find the prominences and process.
+        Identify stable points and determine prominence mass along a closed magnetic field line.
 
-        Fieldline must be an astropy table with required columns:
-        "radius", "theta", "phi", "ds", "Bmag", "Brad", "Btheta", "Bphi"
+        Parameters
+        ----------
+        fieldline : `~astropy.table.QTable`
+            Table representing the closed field line.
+            Required columns: "radius", "theta", "phi", "ds", "Bmag", "Brad", "Btheta", "Bphi".
+            Optional columns: "s_pos" (path position)
 
-        And optional columns:
-        "s_pos"
+        Returns
+        -------
+        fieldline : `~astropy.table.QTable`
+            Modified field line table with prominence information added, including:
+            "proms", "Rhoprom", "Mprom", and cross-sectional/volumetric columns.
         """
         
-
         if not "s_pos" in fieldline.colnames:
             s_pos = np.cumsum(fieldline["ds"])
             fieldline["s_pos"] = np.concatenate(([0*u.m], s_pos[:-1])).to(self.radius)
@@ -244,18 +274,22 @@ class FieldlineProcessor():
 
     def process_wind_fieldline(self, fieldline):
         """
-        Build a wind fieldline table. TODO
+        Process an open (stellar wind) magnetic field line.
+        Note: This function contains minimal processing, and so should be overwritten
+        for modelling that includes real treatment of the wind,
 
-        This is for models where we don't really real with the wind, can be updated to be more complex.
+        Parameters
+        ----------
+        fieldline : `~astropy.table.QTable`
+           Table representing the open field line.
+           Required columns: "radius", "theta", "phi", "ds", "Bmag", "Brad", "Btheta", "Bphi".
+           Optional columns: "s_pos" (path position)
+        Returns
+        -------
+        fieldline : `~astropy.table.QTable`
+           Table with wind-related quantities added and placeholder prominence fields.
         """
-        
-        # NOTE: this is what i am assuming is being sent in now
-        # Setting the table we'll collect all the properties in
-        #line_table = QTable(names=["radius", "theta", "phi", "ds", "s_pos", "Bmag", "Brad", "Btheta", "Bphi"],
-        #                    data=[coords.radius.to(self.radius), (90*u.deg - coords.lat).to(u.rad), coords.lon.to(u.rad),
-        #                          deltas, s_pos, np.sqrt(np.sum(B**2,axis=1)), B[:,0], B[:,1], B[:,2]])
-
-
+         
         if not "s_pos" in fieldline.colnames:
             s_pos = np.cumsum(fieldline["ds"])
             fieldline["s_pos"] = np.concatenate(([0*u.m], s_pos)).to(self.radius)
@@ -290,7 +324,16 @@ class FieldlineProcessor():
 
     def _set_model_constants(self, kappa_power, T_cor, T_prom):
         """
-        Setup all model constants needed for finding prominences
+        Set up all model constants needed for finding prominences.
+
+        Parameters
+        ----------
+        kappa_power : float
+            Logarithmic scaling for pressure constant, i.e. kappa_p = 10 ** (-kappa_power).
+        T_cor : `~astropy.units.Quantity`
+            Corona temperature.
+        T_prom : `~astropy.units.Quantity`
+            Prominence temperature.
         """
 
         # Check units for these
@@ -311,7 +354,34 @@ class FieldlineProcessor():
     def build_model_corona(self, closed_fieldlines, open_fieldlines, rss, kappa_power, T_cor, T_prom,
                            dtheta, dphi, distance=None):
         """
-        Build a model corona object, returns ModelCorona
+        Construct a model corona from closed and open field lines.
+        
+        Parameters
+        ----------
+        closed_fieldlines : list of `~astropy.table.QTable`
+            List of closed magnetic field lines.
+        open_fieldlines : list of `~astropy.table.QTable`
+            List of open magnetic field lines.
+        rss : `~astropy.units.Quantity`
+            Source surface radius.
+        kappa_power : float
+            Power-law index for pressure scaling (used in 10^-kappa_power).
+        T_cor : `~astropy.units.Quantity`
+            Coronal temperature.
+        T_prom : `~astropy.units.Quantity`
+            Prominence temperature.
+        dtheta : `~astropy.units.Quantity`
+            Angular resolution in theta.
+        dphi : `~astropy.units.Quantity`
+            Angular resolution in phi.
+        distance : `~astropy.units.Quantity`, optional
+            Distance to the star, used for converting to observables.
+
+        Returns
+        -------
+        model_corona : `~corona.ModelCorona`
+            Modeled corona containing processed field lines and associated metadata.
+            Ready for synthetic data creation.
         """
 
         # reset prom count
@@ -326,9 +396,6 @@ class FieldlineProcessor():
 
         if self.verbose:
             print("Looking for prominences.")
-
-
-        # TODO: I think the processing functions are in place now, so figure out how to deal with that
             
         # Find prominences
         line_num = 1
@@ -349,9 +416,6 @@ class FieldlineProcessor():
         # Build the wind lines
         line_num = -1
         for open_line in open_fieldlines:
-            #if not len(open_line):  # Just skip the empty ones
-            #    continue
-
             line_table = self.process_wind_fieldline(open_line)
             line_table["line_num"] = line_num
             line_num -=1
@@ -376,7 +440,6 @@ class FieldlineProcessor():
 
         corona_model = corona.ModelCorona.from_field_lines(corona_model , distance=distance,
                                                            radius=self.radius, rss=rss)
-        
 
         return corona_model
     

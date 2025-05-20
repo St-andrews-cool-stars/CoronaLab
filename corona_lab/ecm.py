@@ -16,9 +16,29 @@ from .utils import normalize_frequency
 
 def ecm_allowed(n_e, B):
     """
-    Function to determine if a cell can produce ECM emission.
+    Determine if a plasma cell meets the conditions for Electron Cyclotron Maser (ECM) emission.
 
-    Llama et al 2018 eq 3
+    Based on Llama et al. (2018), Equation 3.
+
+    Parameters
+    ----------
+    n_e : float or `~astropy.units.Quantity`
+        Electron number density. Can be unitless (assumed in m⁻³) or a Quantity with units.
+    B : float or astropy.units.Quantity
+        Magnetic field strength. Can be unitless (assumed in Gauss) or a Quantity with units.
+
+    Returns
+    -------
+    bool
+        True if ECM emission is allowed under the input conditions, False otherwise.
+
+    Notes
+    -----
+    The ECM condition is:
+
+        n_e / 1e14 < (28 * B / 900)^2
+
+    where `n_e` is in m⁻³ and `B` in Gauss.
     """
     
     if isinstance(n_e, u.Quantity):
@@ -32,20 +52,20 @@ def ecm_allowed(n_e, B):
 
 def gyrofrequency(B, s=1):
     """
-    Given a magnetic field strength and harmonic number calculate 
-    the gyroresonance emission frequency.
-    
+    Calculate the gyroresonance emission frequency for a given magnetic
+    field strength and harmonic number.
+
     Parameters
     ----------
-    B : Astropy Quantity or float
-        If float, will be assumed to be in Gauss.
-    s : int
-        Harmonic number
-        
+    B : float or `~astropy.units.Quantity`
+        Magnetic field strength. If unitless, assumed to be in Gauss.
+    s : int, optional
+        Harmonic number (default is 1).
+
     Returns
     -------
-    response : Astropy Quantity
-        Gyroresonance emission frequency in GHz
+    ~astropy.units.Quantity
+        Gyroresonance emission frequency in GHz.
     """
     
     if isinstance(B, u.Quantity):
@@ -56,9 +76,34 @@ def gyrofrequency(B, s=1):
 
 def ecmfrac_calc(model, s=1):
     """
-    Calculate the ECM fraction along every field line.
-    
-    Note, currently doing this field lines with prominences only.
+    Calculate the fraction of total electron cyclotron maser (ECM) energy emitted by
+    each cell along every magnetic field line in a corona model.
+
+    The ECM fraction is weighted by the local gyrofrequency and path length (`ds`)
+    and only includes regions where ECM emission is allowed. The result is stored
+    in the `ecm_frac` column of the model table.
+
+    Parameters
+    ----------
+    model : `~corona_lab.ModelCorona` or `~astropy.table.QTable`
+        Table-like object containing the magnetic model of the system.
+        Required columns:
+        - "Bmag" : ~astropy.units.Quantity, magnetic field strength
+        - "ndens" : ~astropy.units.Quantity, number density
+        - "ds" : ~astropy.units.Quantity, cell path length along the field line
+        - "line_num" : int, field line identifier
+        - "prom" : bool, mask for prominence regions
+    s : int, optional
+        Harmonic number used in the gyrofrequency calculation (default is 1).
+
+    Raises
+    ------
+    ValueError
+        If no regions in the model allow ECM emission.
+
+    Notes
+    -----
+    The ECM fraction is calculated only for field lines with prominences.
     """
     
     model["gyro_freq"] = gyrofrequency(model["Bmag"], s)
@@ -72,7 +117,7 @@ def ecmfrac_calc(model, s=1):
     if not model["ECM valid"].any():
         raise ValueError("No ECM possible.")
         
-    for ln_num in np.unique(model["line_num"][model.prom]):
+    for ln_num in np.unique(model["line_num"][model["proms"]]):
 
         line_inds = (model["line_num"] == ln_num)
 
@@ -84,13 +129,55 @@ def ecmfrac_calc(model, s=1):
 
 def ecm_flux(model, field_lines, tau, epsilon=0.1, sigma=1*u.deg, verbose=False):
     """
-    Calculate ECM intensity at a given phase.
+    Calculate the ECM (Electron Cyclotron Maser) intensity at a given phase.
 
-    Note: should put in a check for prominences
+    This function loops over specified prominence-bearing field lines, computes the total available 
+    ECM power from prominence ejections, distributes it along the field-line and computes the visible intensity
+    for each field-line cell. The input model should have calculated cartesian coordinates such that the observer
+    is looking down the x-axis for the desired observing angle.
+
+    Parameters
+    ----------
+    model : `~corona_lab.ModelCorona` or `~astropy.table.QTable`
+        Table-like object containing the magnetic model of the system.
+        Required columns:
+            - 'x' : ~astropy.units.Quantity
+            - 'ds' : ~astropy.units.Quantity
+            - 'Mprom' : ~astropy.units.Quantity
+            - 'radius' : ~astropy.units.Quantity
+            - 'ecm_frac' : float (unitless)
+            - 'line_num' : int
+        Metadata must include:
+            - 'Distance' : ~astropy.units.Quantity (distance to observer)
+            - 'Mass' (optional): ~astropy.units.Quantity (stellar mass; defaults to 1 M_sun)
+    field_lines : list[int]
+        List of field line numbers to include in the flux calculation.
+    tau : `~astropy.units.Quantity`
+        Timescale over which energy is radiated.
+    epsilon : float, optional
+        Efficiency factor for ECM emission (default: 0.1).
+    sigma : `~astropy.units.Quantity`, optional
+        Angular width of the emission cone (default: 1 deg) (emission cone has a fixed
+        opening angle of 90 deg).
+    verbose : bool, optional
+        Whether to print debug messages.
+
+    Returns
+    -------
+    None
+        The function modifies the `model` table in-place by populating the 'ECM' column
+        with intensities in units of mJy GHz.
+
+    Notes
+    -----
+    - Assumes ECM emission is emitted isotropically in a Gaussian angular profile.
+    - Skips field lines with <4 points or no visible regions.
+    - Currently assumes prominence mass (`Mprom`) is already set on the model.
     """
 
+    # TODO: fix the no prominences case, right now you get nans in the ECM flux
+    
     # Clearing any old data
-    #model["delta_theta"] = np.nan*u.rad  # Could take this out in future when I am sure it's working correctly
     model["ECM"] = 0*u.mJy*u.GHz
     
     for ln_num in field_lines:
@@ -137,19 +224,42 @@ def ecm_flux(model, field_lines, tau, epsilon=0.1, sigma=1*u.deg, verbose=False)
 
 
         radsigma = sigma.to(u.rad).value
-        #modr = model.meta["Distance"] + line_arr["ds"]/radsigma# pulling out the distance for convenience
         
         ecm = (visible_fraction * (power_tot/(2*np.pi*radsigma*model.meta["Distance"]**2)) * line_arr["ecm_frac"])
 
         model["ECM"][line_inds] = ecm
-        
-
 
         
 def ecm_by_freq(model, freq_bin_edges):
     """
-    Given a model with ECM already calculated and a frequency list,
-    return the total ECM intensity for each frequency.
+    Bin total ECM emission by frequency and return spectral flux density.
+
+    Given a model that contains precomputed ECM intensities (for the current observing angle of the
+    model) and corresponding gyroresonant frequencies, this function bins the total ECM power into
+    specified frequency bins and returns the resulting spectral flux density (mJy).
+
+    Parameters
+    ----------
+    model : `~corona_lab.ModelCorona` or `~astropy.table.QTable`
+        Table-like object containing the magnetic model of the system.
+        Required columns:
+        - "ECM": ECM emission (with units of flux × frequency)
+        - "gyro_freq" is the emission frequency (as ~astropy.units.Quantity).
+
+    freq_bin_edges : `~astropy.units.Quantity`
+        1D array of frequency bin edges (must have units of frequency, e.g., GHz).
+        The output will have one less element than the length of this array.
+
+    Returns
+    -------
+    intensities : `~astropy.units.Quantity`
+        Array of total ECM flux per frequency bin divided by bin width, resulting
+        in spectral flux density. Units are equivalent to flux density (mJy).
+    
+    Notes
+    -----
+    - Values of `gyro_freq` outside the provided bin range are ignored.
+    - The upper edge of the last bin is inclusive.
     """
 
     intensities = np.zeros(len(freq_bin_edges)-1)*model["ECM"].unit
@@ -175,11 +285,44 @@ def ecm_by_freq(model, freq_bin_edges):
 
 def dynamic_spectrum(model, freqs, phases, field_lines, tau, epsilon=0.1, sigma=1*u.deg):
     """
-    TODO: WRITE THIS
+    Generate a dynamic spectrum of Electron Cyclotron Maser (ECM) emission over a range of 
+    frequencies and rotational phases.
 
-    TODO: not sure about the return params, seems a little out of hand
+    Parameters
+    ----------
+    model : `~model_corona.ModelCorona`
+        Model corona object. Must be pre-setup with ecm_frac already calculated.
+    freqs : int or array-like
+        If int, the number of frequency bins (edges will be computed automatically from 
+        valid gyrofrequencies in `model`). If array-like, the frequency bin edges as 
+        `~astropy.units.Quantity` or array of floats (assumed to be in Hz or compatible).
+    phases : int or `~astropy.units.Quantity`
+        If int, the number of evenly spaced rotational phases from 0° to 360°. 
+        If a `Quantity`, the exact phases (in degrees) to evaluate.
+    field_lines : list[int]
+        List of field line numbers to include in the flux calculation.
+    tau : `~astropy.units.Quantity`
+        Timescale over which energy is radiated.
+    epsilon : float, optional
+        Efficiency factor for ECM emission (default: 0.1).
+    sigma : `~astropy.units.Quantity`, optional
+        Angular width of the emission cone (default: 1 deg) (emission cone has a fixed
+        opening angle of 90 deg).
+
+    Returns
+    -------
+    diagram_arr : `~astropy.units.Quantity`
+        2D array of flux densities with shape (n_freqs, n_phases), in mJy.
+    freqs : `~astropy.units.Quantity`
+        Frequency midpoints corresponding to each row in `diagram_arr`.
+    phases : `~astropy.units.Quantity`
+        Rotational phases (in degrees) corresponding to each column in `diagram_arr`.
+    freq_edges : `~astropy.units.Quantity`
+        Frequency bin edges used to compute the midpoints.
     """
 
+    # TODO: Move this to the object itself?
+    
     # Frequency preprocessing
     if isinstance(freqs, int):
         num_freqs = freqs + 1 # plus one bc we are calculating frequency bin edges

@@ -17,29 +17,37 @@ from .utils import normalize_frequency
 
 def kappa_ff(teff, freq, ni, Z=1.128):
     """
-    Calculating kappa_ff. Free-free absorption coefficient
-    TODO: add references
+    Calculate the free-free absorption coefficient (κ_ff).
 
+    This function computes the free-free absorption coefficient for a plasma 
+    based on the given effective temperature (teff), observation frequency, 
+    and ion number density.
+
+    Note: The calculation assumes the presence of 
+    hydrogen, so ni = 2n_e = 2n_p.
 
     Parameters
     ----------
     teff : float or quantity
-        Effective temperature (if float assumed K)
+        Effective temperature. If a float is provided, it is assumed to be 
+        in Kelvin.
     freq : float or quantity
-        Observation frequency (if float assumed Hz)
+        Observation frequency. If a float is provided, it is assumed to be 
+        in Hz.
     ni : float or quantity
-        Number density, assuming hydrogen, so ni = 2n_e = 2n_p (if float assumed m^-3)
-    Z = mean ion charge 1.128 (from simon's paper)
-        
-    
+        Number density. If a float is provided, it is assumed 
+        to be in m^-3.
+    Z : float, optional
+        Mean ion charge (default is 1.128, from Simon's paper TODO proper citation). 
+
     Returns
     -------
     result : float
-        Free-free absorption coefficient for given parameters.
+        Free-free absorption coefficient (κ_ff) in units of cm^-1.
     """
     
     # Deal with the quantities if any
-    
+
     try:
         teff = teff.to(u.K).value
     except AttributeError:
@@ -60,15 +68,39 @@ def kappa_ff(teff, freq, ni, Z=1.128):
     return (0.0178 * Z**2 * gff / (np.power(teff,1.5)*freq**2) * (ni/2)**2) / u.cm
 
 
-def freefree_image(field_table, obs_freq, sidelen_pix, sidelen_rad=None, distance=None, kff_col="kappa_ff"):
+def freefree_image(field_table, sidelen_pix, sidelen_rad=None, distance=None, kff_col="kappa_ff"):
     """
-    Given a magnetic field table with necessary columns (TODO: specify)
-    and a pixel size, create an intensity image along the x-direction
-    line of sight. (Only does square image)
+    Generate a free-free emission intensity image along the x-direction line of sight.
 
-    TODO: note required columns etc
+    This function takes a magnetic field data table (as a QTable) and constructs
+    a square 2D image by integrating thermal free-free radiation along the x-axis.
+
+    Parameters
+    ----------
+    field_table : astropy.table.QTable
+        A QTable containing 3D positions and physical parameters.
+        Required columns: 'x', 'y', 'z', 'blackbody', and `kff_col`.
+        Required metadata: "Source Surface Radius" and "Radius".
+        TODO: explain these columns better (esp how they depend on observing frequency)
+    sidelen_pix : int
+        The number of pixels per side in the output square image.
+    sidelen_rad : float or None, optional
+        Side length of the image in radial units. If None, defaults to 2×Source Surface Radius.
+    distance : astropy.units.Quantity or None, optional
+        Distance to the object. If provided, output will be flux (in mJy), otherwise an intensity image will be returned.
+    kff_col : str, optional
+        Column name for the free-free opacity coefficient. Default is "kappa_ff".
+
+    Returns
+    -------
+    image : astropy.units.Quantity
+        2D flux (or intensity) image.
+
+    Raises
+    ------
+    TypeError
+        If input is not a QTable, or required columns are missing.
     """
-
     if not isinstance(field_table, QTable):
         raise TypeError("Input table must be a QTable!")
 

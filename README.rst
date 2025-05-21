@@ -1,8 +1,6 @@
-⚠️ **This is code is very very much under active development and in an alpha state.**
 
-
-Implements a PFSS model with stellar prominences.
--------------------------------------------------
+Create Synthetic Data Products from a 3D Stellar Corona Magnetic Field
+----------------------------------------------------------------------
 
 Developer Documentation
 -----------------------
@@ -10,10 +8,18 @@ Developer Documentation
 Installation
 ^^^^^^^^^^^^
 
+From pip
+    
 .. code-block:: bash
 
-    $ git clone https://github.com/St-andrews-cool-stars/model_corona.git
-    $ cd model_corona
+    $ pip install corona_lab
+    
+From source
+    
+.. code-block:: bash
+
+    $ git clone https://github.com/St-andrews-cool-stars/CoronaLab.git
+    $ cd CoronaLab
     $ pip install .
     
 For active developement intall in develop mode
@@ -79,14 +85,14 @@ License
 This project is Copyright (c) St Andrews Cool Stars Group and licensed under
 the terms of the BSD 3-Clause license. This package is based upon
 the `Openastronomy packaging guide <https://github.com/OpenAstronomy/packaging-guide>`_
-which is licensed under the BSD 3-clause licence. See the licenses folder for
+which is licensed under the BSD 3-clause licence. See the `docs/LICENSE.rst` file.
 more information.
 
 
 Contributing
 ------------
 
-We love contributions! model_corona is open source,
+We love contributions! CoronaLab is open source,
 built on open source, and we'd love to have you hang out in our community.
 
 **Imposter syndrome disclaimer**: We want your help. No, really.
